@@ -71,7 +71,7 @@ The rules above are enforced, not only requested. They act only inside a worktre
 - **checks gate** (when an executor finishes): compares the files changed since the task started with the list, and runs the repo's checks. On failure the executor is sent back to fix it, up to `task_attempts` times; then the task is marked `fail` and the conductor escalates.
 - **context cap** (on each prompt and after each subagent): warns at 80 % of `limits.context_tokens` and, over the cap, tells the session to close and continue in a new one.
 
-All guards are fail-open: an error in a guard never blocks work. `HOME_OFFICE_GUARD=0` and `HOME_OFFICE_GATE=0` disable the scope guard and the checks gate for a session.
+All guards are fail-open: an error in a guard never blocks work. `HOME_OFFICE_GUARD=0`, `HOME_OFFICE_GATE=0` and `HOME_OFFICE_CAP=0` disable the scope guard, the checks gate and the context cap for a session (set them before starting it).
 
 ## Delegation
 

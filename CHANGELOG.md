@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- `HOME_OFFICE_CAP=0` disables the context cap for a session, like `HOME_OFFICE_GUARD=0` and `HOME_OFFICE_GATE=0`.
+
 ## 0.3.0 — 2026-10-18
 - Document language per project: `language` in `.home-office.yml` now applies to every document the plugin writes (SPEC, PLAN, TASKS, STATE, DECISIONS, brief, board, log, knowledge cards) and to review findings. Sections are found by position, so other commands work in any language. See `core/WORKFLOW.md` § Language.
 - `init` asks for the language, proposing the one the user writes in; existing configs without `language` are offered the field.

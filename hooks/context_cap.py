@@ -6,7 +6,7 @@ Reads the size of the current context from the session transcript and:
   - at 100 %: warns the user and tells the model to wrap up with /home-office:close
     (on every prompt; after tools, only once).
 
-It never blocks anything. Fail-open.
+It never blocks anything. Fail-open. `HOME_OFFICE_CAP=0` disables it for a session.
 """
 
 import json
@@ -59,6 +59,8 @@ def save_state(path: str, state: dict) -> None:
 
 
 def main() -> None:
+    if os.environ.get("HOME_OFFICE_CAP") == "0":
+        return
     data = read_stdin_json()
     if data.get("agent_id"):
         return  # subagents are short-lived by design
