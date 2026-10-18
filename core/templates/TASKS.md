@@ -7,6 +7,7 @@ Each TASK is self-contained. An executor reads only its TASK, the contract and t
 - Branch: feature/NN-name
 - Depends on: —
 - Files (closed list): `<path>`, `<path>`
+- Delete: — (or `<path>`, `<path>`: what this TASK removes; exact file or folder paths, no globs)
 - Read: `<source>/<file>#<section>`; PLAN § Contract
 - Do: <precise instructions>
 - Done when: checks green (<checks>); <behaviour>

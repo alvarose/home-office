@@ -7,7 +7,10 @@ implementer) and its worktree has an active task (`home-office-task.json`, writt
   2. the `HOME-OFFICE-WORKTREE: <path>` line the conductor puts in the subagent's prompt.
 
 Checks, in order:
-  - files changed since task start that are outside the TASK's file list or hit a deny rule;
+  - the TASK's prepare commands (e.g. code generators), run inside the worktree; the files
+    they write never count as changed by the TASK;
+  - files changed since task start that are outside the TASK's file list or hit a deny rule
+    (files in the TASK's delete list may be gone);
   - the TASK's checks (the repo's commands), run inside the worktree.
 
 On failure it blocks the stop and sends the problems back, so the executor fixes them.
@@ -21,11 +24,10 @@ import json
 import os
 import re
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _common import (changed_since, denied, emit, ignored, in_scope,  # noqa: E402
-                     load_scope, read_stdin_json, run_check, save_scope)
+from _common import (emit, evaluate_task, load_scope, read_stdin_json,  # noqa: E402
+                     save_scope)
 
 EXECUTORS = {"backend", "frontend", "implementer"}
 REPORT_RE = re.compile(r"^\s*worktree:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
@@ -100,29 +102,7 @@ def main() -> None:
         return
 
     task = scope.get("task") or "this TASK"
-    problems = []
-
-    touched = [f for f in changed_since(worktree, scope.get("baseline") or {})
-               if not ignored(f, scope)]
-    outside = [f for f in touched if not in_scope(f, scope)]
-    forbidden = [f"{f} ({denied(f, scope)})" for f in touched if denied(f, scope)]
-    if forbidden:
-        problems.append("Forbidden paths changed (hard rules):\n  " + "\n  ".join(forbidden))
-    if outside:
-        problems.append("Files changed outside the TASK's file list:\n  " + "\n  ".join(outside)
-                        + "\nRevert those changes, or stop and report `needs-plan-change`.")
-
-    results = []
-    if not problems:
-        for cmd in scope.get("checks") or []:
-            ok, tail = run_check(cmd, worktree, timeout=int(scope.get("check_timeout") or 1200))
-            results.append({"check": cmd, "ok": ok})
-            if not ok:
-                problems.append(f"$ {cmd}\n{tail}")
-
-    scope["touched"] = touched
-    scope["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    scope["results"] = results
+    problems = evaluate_task(worktree, scope)
 
     if not problems:
         scope["gate"] = "pass"

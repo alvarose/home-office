@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 SCOPE_FILE = "home-office-task.json"
 IS_WINDOWS = os.name == "nt"
@@ -150,6 +151,22 @@ def in_scope(rel: str, scope: dict) -> bool:
     return matches(rel, files) or matches(rel, allow)
 
 
+def in_delete_list(rel: str, scope: dict) -> bool:
+    """Exact paths only (no globs); a listed folder covers everything under it."""
+    rel_cmp = rel.lower() if IS_WINDOWS else rel
+    for path in scope.get("delete") or []:
+        p = path.replace("\\", "/").rstrip("/")
+        p_cmp = p.lower() if IS_WINDOWS else p
+        if p_cmp and (rel_cmp == p_cmp or rel_cmp.startswith(p_cmp + "/")):
+            return True
+    return False
+
+
+def deleted_as_planned(worktree: str, rel: str, scope: dict) -> bool:
+    """A file the TASK lists for deletion and that is gone now."""
+    return in_delete_list(rel, scope) and not os.path.lexists(os.path.join(worktree, rel))
+
+
 def denied(rel: str, scope: dict):
     for rule in scope.get("deny") or []:
         if isinstance(rule, str):
@@ -240,6 +257,79 @@ def run_check(cmd: str, cwd: str, timeout: int = 1200, tail: int = 40):
         return False, f"timed out after {timeout}s"
     except Exception as exc:  # command not found, etc.
         return False, f"could not run: {exc}"
+
+
+# ---------------------------------------------------------------- task evaluation
+
+def run_prepare(worktree: str, scope: dict, timeout: int):
+    """Run the TASK's prepare commands (code generators and the like) before the checks.
+
+    Returns (problems, results, generated): `generated` are the files the commands wrote,
+    which never count as changed by the TASK (they are regenerated from the TASK's files).
+    """
+    commands = scope.get("prepare") or []
+    if not commands:
+        return [], [], []
+    def state(rel):
+        try:
+            mtime = os.stat(os.path.join(worktree, rel)).st_mtime_ns
+        except OSError:
+            mtime = None
+        return file_hash(worktree, rel), mtime
+
+    # A generator may rewrite a file with identical content: the mtime changes, the hash not.
+    before = {rel: state(rel) for rel in changed_files(worktree)}
+    problems, results = [], []
+    for cmd in commands:
+        ok, tail = run_check(cmd, worktree, timeout=timeout)
+        results.append({"prepare": cmd, "ok": ok})
+        if not ok:
+            problems.append(f"$ {cmd}   (prepare)\n{tail}")
+            break
+    generated = []
+    for rel in changed_files(worktree):
+        old_hash, old_mtime = before.get(rel, (None, None))
+        new_hash, new_mtime = state(rel)
+        if old_hash != new_hash or old_mtime != new_mtime:
+            generated.append(rel)
+    return problems, results, generated
+
+
+def evaluate_task(worktree: str, scope: dict) -> list:
+    """Prepare commands, scope of the changed files, then checks. Updates `scope` in place.
+
+    Returns the list of problems (empty when the TASK passes).
+    """
+    timeout = int(scope.get("check_timeout") or 1200)
+    prep_problems, results, generated = run_prepare(worktree, scope, timeout)
+    scope["generated"] = sorted(set(scope.get("generated") or []) | set(generated))
+    gen = set(scope["generated"])
+
+    touched = [f for f in changed_since(worktree, scope.get("baseline") or {})
+               if not ignored(f, scope)]
+    outside = [f for f in touched if f not in gen and not in_scope(f, scope)
+               and not deleted_as_planned(worktree, f, scope)]
+    forbidden = [f"{f} ({denied(f, scope)})" for f in touched if f not in gen and denied(f, scope)]
+
+    problems = []
+    if forbidden:
+        problems.append("Forbidden paths changed (hard rules):\n  " + "\n  ".join(forbidden))
+    if outside:
+        problems.append("Files changed outside the TASK's file list:\n  " + "\n  ".join(outside)
+                        + "\nRevert those changes, or stop and report `needs-plan-change`.")
+    problems.extend(prep_problems)
+
+    if not problems:
+        for cmd in scope.get("checks") or []:
+            ok, tail = run_check(cmd, worktree, timeout=timeout)
+            results.append({"check": cmd, "ok": ok})
+            if not ok:
+                problems.append(f"$ {cmd}\n{tail}")
+
+    scope["touched"] = touched
+    scope["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    scope["results"] = results
+    return problems
 
 
 # ---------------------------------------------------------------- transcripts

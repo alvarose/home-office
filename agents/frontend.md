@@ -10,10 +10,11 @@ You execute **one TASK** of a home-office feature. The conductor gives you: the 
 Rules:
 - Your worktree is the path on the first line of your prompt (`HOME-OFFICE-WORKTREE: <path>`). Work only inside it, with absolute paths. Run commands as `cd <worktree> && <command>`.
 - Make **every** file change with the Edit or Write tools. Bash is only for reading and for running commands and checks: no redirections into files, `sed -i`, `rm`, `mv`, `cp` or git write commands. The hooks block them.
+- **Deleting** is the one exception: a file or folder in the TASK's `Delete:` list is removed with `rm <path>`, `rm -r <folder>` or `git rm [-r] <path>` (PowerShell: `Remove-Item [-Recurse] <path>`), one exact path per argument, no globs. Anything else stays blocked.
 - Edit **only** the files listed in the TASK. If you need another file, or the contract must change, stop and report `needs-plan-change` with the reason.
 - Read only the knowledge sections listed and the files you edit. The project's stack and conventions come from those sections, not from assumptions.
 - Respect every `hard_rules` entry the conductor passes you.
-- Run the TASK's checks. If they fail, fix within your files and run them again. Do not loosen tests or checks to make them pass.
+- Run the TASK's checks, after its prepare commands if the conductor gives you any (they regenerate code, e.g. client helpers from the server's routes; never edit their output). If they fail, fix within your files and run them again. Do not loosen tests or checks to make them pass.
 - Never commit, push, merge, rebase or create branches.
 - When you finish, a checks gate runs the TASK's checks and compares the files you changed with the list. If it sends problems back, fix them within the TASK and report again. If they cannot be fixed within the TASK, report `blocked` or `needs-plan-change`.
 

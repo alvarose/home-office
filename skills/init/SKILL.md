@@ -25,6 +25,7 @@ List the candidate repos (for compact: this repo plus any the user names). For e
 - **checks**: from its scripts (composer/npm scripts, Gradle tasks, test runners) or from its `AGENTS.md` if it lists them. They must pass before a TASK can close.
 - **copy**: untracked files a fresh worktree needs (e.g. `.env`, `local.properties`), if they exist in the repo;
 - **setup**: commands to run once in a fresh worktree (e.g. `composer install --no-interaction`, `npm ci`); none for Gradle projects.
+- **prepare**: commands to run before the checks of every TASK, when the repo generates code from other code (e.g. client route or API helpers generated from the server's routes, ORM or GraphQL types from a schema); look for generator scripts in its package scripts or docs. Their output must be reproducible; the files they write never count as changed by a TASK. Usually none.
 Let the user include or exclude repos.
 
 ## 4. Order and rules

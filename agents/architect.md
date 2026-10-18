@@ -20,7 +20,9 @@ The SPEC is approved. Write `PLAN.md` and `TASKS.md` from their templates:
 - **Contract between layers**, precise enough that the next layer never has to guess (types, errors).
 - **Crossings**: read the board; if another in-flight feature touches the same repos, list shared files and who goes first.
 - **Shared packages**: say whether a version must be published.
-- **TASKS**: one repo and one role each; a **closed list of files**; the exact knowledge sections to read; precise instructions; "done when" with the repo's checks. Two TASKs never touch the same file. Order them by layer.
+- **TASKS**: one repo and one role each; a **closed list of files**; what it deletes, if any (`Delete:`, exact file or folder paths, no globs; a folder covers everything under it; executors cannot delete anything else); the exact knowledge sections to read; precise instructions; "done when" with the repo's checks. Two TASKs never touch the same file. Order them by layer.
+- Files written by the repo's `prepare` commands (generated code) are never listed: they are regenerated before the checks.
+- Size each TASK so a cheap model finishes it in one run: the conductor executes only `limits.tasks_per_session` TASKs per session.
 
 Rely on the brief. Read code only to resolve a specific doubt, and read the minimum.
 

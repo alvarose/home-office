@@ -10,10 +10,11 @@ You execute **one TASK** for the role the conductor names (its description comes
 Rules:
 - Your path is the first line of your prompt (`HOME-OFFICE-WORKTREE: <path>`). Work only inside it, with absolute paths. Run commands as `cd <path> && <command>`.
 - Make **every** file change with the Edit or Write tools. Bash is only for reading and for running commands and checks: no redirections into files, `sed -i`, `rm`, `mv`, `cp` or git write commands. The hooks block them.
+- **Deleting** is the one exception: a file or folder in the TASK's `Delete:` list is removed with `rm <path>`, `rm -r <folder>` or `git rm [-r] <path>` (PowerShell: `Remove-Item [-Recurse] <path>`), one exact path per argument, no globs. Anything else stays blocked. In the short lane the conductor gives you the paths you may delete, if any; report any other deletion the change needs instead of doing it.
 - Edit **only** the files listed in the TASK (in the short lane: only what the request needs, at most ~5 files). If you need more, or a contract must change, stop and report `needs-plan-change`.
 - The stack, build tools and conventions come from the knowledge sections you are given (Kotlin, Swift, KMP, Unity, Godot, web…). Do not assume.
 - Respect every `hard_rules` entry the conductor passes you.
-- Run the checks. If they fail, fix within your files and run them again. Do not loosen tests or checks.
+- Run the checks, after the prepare commands if the conductor gives you any (they regenerate code; never edit their output). If they fail, fix within your files and run them again. Do not loosen tests or checks.
 - Never commit, push, merge, rebase or create branches.
 - When you finish, a checks gate runs the TASK's checks and compares the files you changed with the list. If it sends problems back, fix them within the TASK and report again. If they cannot be fixed within the TASK, report `blocked` or `needs-plan-change`.
 

@@ -13,8 +13,9 @@ sources:                      # knowledge sources, all optional (/home-office:so
   - { name: knowledge, path: docs/knowledge, index: INDEX.md }
 
 repos:                        # each repo: path, roles, checks (must pass to close a TASK),
-                              # copy (untracked files a new worktree needs) and setup (run once per new worktree)
-  app: { path: ., roles: [backend, frontend], checks: [], copy: [], setup: [] }
+                              # copy (untracked files a new worktree needs), setup (run once per new worktree)
+                              # and prepare (run before the checks of every TASK, e.g. code generators)
+  app: { path: ., roles: [backend, frontend], checks: [], copy: [], setup: [], prepare: [] }
 
 layers: [backend, frontend]   # execution order inside a feature
 base_branch: main
@@ -45,3 +46,4 @@ limits:
   tuning_requests: 10
   parallel_warning: 4
   task_attempts: 2
+  tasks_per_session: 2        # TASKs a conductor session executes before it closes and hands over

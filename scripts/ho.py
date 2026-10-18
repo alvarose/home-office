@@ -1,9 +1,11 @@
 """home-office helper for the conductor. Deterministic steps, so the model does not improvise them.
 
   worktree    create (or reuse) a feature worktree and prepare it
-  task-start  open a TASK in a worktree: closed file list, deny rules, checks, baseline
+  task-start  open a TASK in a worktree: closed file list, delete list, deny rules,
+              prepare commands, checks, baseline
   task-status show the active TASK of a worktree
   task-end    close the TASK: print the gate result and the touched files, remove the scope file
+              (--run-checks: evaluate it here when no checks gate ran, e.g. delegated tools)
   context     print the context size of a session transcript (debugging)
 
 Usage examples (paths are absolute):
@@ -12,8 +14,9 @@ Usage examples (paths are absolute):
       --branch feature/07-x --base dev --copy .env --setup "composer install"
   python3 ho.py task-start --worktree C:/src/.worktrees/app/07-x --task "07-x / TASK 2" \\
       --file app/Models/Pet.php --file tests/Unit/PetTest.php \\
+      --delete app/Models/OldPet.php \\
       --deny "database/migrations/**=Migrations only in the core repo" \\
-      --check "composer test" --attempts 2
+      --prepare "php artisan routes:generate" --check "composer test" --attempts 2
   python3 ho.py task-end --worktree C:/src/.worktrees/app/07-x
 
 All commands print one JSON object on stdout.
@@ -28,8 +31,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
-from _common import (git, last_context_tokens, load_scope, run_check,  # noqa: E402
-                     save_scope, scope_path, snapshot)
+from _common import (evaluate_task, git, last_context_tokens, load_scope,  # noqa: E402
+                     run_check, save_scope, scope_path, snapshot)
 
 
 def out(obj: dict, code: int = 0) -> None:
@@ -88,7 +91,9 @@ def cmd_task_start(a) -> None:
         "worktree": wt,
         "files": [f.replace("\\", "/") for f in a.file or []],
         "allow": [g.replace("\\", "/") for g in a.allow or []],
+        "delete": [f.replace("\\", "/") for f in a.delete or []],
         "deny": parse_deny(a.deny),
+        "prepare": a.prepare or [],
         "checks": a.check or [],
         "ignore": [g.replace("\\", "/") for g in a.ignore or []],
         "attempts": a.attempts,
@@ -100,13 +105,13 @@ def cmd_task_start(a) -> None:
     }
     save_scope(wt, scope)
     out({"ok": True, "task": a.task, "worktree": wt, "files": scope["files"],
-         "deny": scope["deny"], "checks": scope["checks"],
-         "prompt_marker": f"HOME-OFFICE-WORKTREE: {wt}"})
+         "delete": scope["delete"], "deny": scope["deny"], "prepare": scope["prepare"],
+         "checks": scope["checks"], "prompt_marker": f"HOME-OFFICE-WORKTREE: {wt}"})
 
 
 def summary(scope: dict) -> dict:
     return {k: scope.get(k) for k in ("task", "worktree", "gate", "gate_blocks", "touched",
-                                      "results", "problems", "started", "last_run")}
+                                      "generated", "results", "problems", "started", "last_run")}
 
 
 def cmd_task_status(a) -> None:
@@ -119,6 +124,12 @@ def cmd_task_end(a) -> None:
     scope = load_scope(wt)
     if not scope:
         out({"ok": True, "active": False})
+    if a.run_checks and scope.get("gate") not in ("pass", "fail"):
+        # No executor gate ran (delegated tool, tuning session): evaluate here, once.
+        problems = evaluate_task(wt, scope)
+        scope["problems"] = problems
+        scope["gate"] = "fail" if problems else "pass"
+        save_scope(wt, scope)
     result = summary(scope)
     if not a.keep:
         try:
@@ -150,7 +161,12 @@ def main() -> None:
     s.add_argument("--task", required=True)
     s.add_argument("--file", action="append", help="file the TASK may change (repeat)")
     s.add_argument("--allow", action="append", help="glob the TASK may change (repeat)")
+    s.add_argument("--delete", action="append",
+                   help="file or folder the TASK may delete with rm / git rm / Remove-Item "
+                        "(exact path, no globs; a folder covers everything under it; repeat)")
     s.add_argument("--deny", action="append", help="'glob=reason' that must never change (repeat)")
+    s.add_argument("--prepare", action="append",
+                   help="command run before the checks, e.g. a code generator (repeat)")
     s.add_argument("--check", action="append", help="command that must pass (repeat)")
     s.add_argument("--ignore", action="append",
                    help="glob of generated files that never count as changed (repeat; common "
@@ -167,6 +183,8 @@ def main() -> None:
     e = sub.add_parser("task-end")
     e.add_argument("--worktree", required=True)
     e.add_argument("--keep", action="store_true", help="print the result but keep the scope file")
+    e.add_argument("--run-checks", action="store_true",
+                   help="if no checks gate ran, run prepare, the scope check and the checks now")
     e.set_defaults(fn=cmd_task_end)
 
     c = sub.add_parser("context")
