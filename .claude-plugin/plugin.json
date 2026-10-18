@@ -1,0 +1,16 @@
+{
+  "name": "home-office",
+  "version": "0.3.0",
+  "description": "A tool-agnostic way of working with coding agents: plan with a strong model, execute with cheaper ones, keep state in files, keep sessions short.",
+  "author": {
+    "name": "Álvaro Serrano"
+  },
+  "keywords": [
+    "workflow",
+    "agents",
+    "spec-driven",
+    "multi-repo",
+    "planning",
+    "token-efficiency"
+  ]
+}

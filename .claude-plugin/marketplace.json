@@ -1,0 +1,12 @@
+{
+  "name": "home-office",
+  "description": "home-office: a tool-agnostic way of working with coding agents.",
+  "owner": { "name": "Álvaro Serrano" },
+  "plugins": [
+    {
+      "name": "home-office",
+      "source": "./",
+      "description": "Plan with a strong model, execute with cheaper ones, keep state in files, keep sessions short."
+    }
+  ]
+}

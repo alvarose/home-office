@@ -1,0 +1,47 @@
+# home-office configuration. Created by /home-office:init; edit freely.
+# Paths are relative to this file.
+
+project: my-project
+type: compact                 # compact | multirepo
+language: en                  # language of the documents home-office writes for this project; change it with /home-office:language
+
+work: docs/work               # board, features, campaigns, log
+board: BOARD.md
+log: log.md
+
+sources:                      # knowledge sources, all optional (/home-office:sources)
+  - { name: knowledge, path: docs/knowledge, index: INDEX.md }
+
+repos:                        # each repo: path, roles, checks (must pass to close a TASK),
+                              # copy (untracked files a new worktree needs) and setup (run once per new worktree)
+  app: { path: ., roles: [backend, frontend], checks: [], copy: [], setup: [] }
+
+layers: [backend, frontend]   # execution order inside a feature
+base_branch: main
+shared_packages: []           # repos published as a dependency of others
+worktrees: ../.worktrees      # where feature worktrees are created: <worktrees>/<repo>/<NN-name>
+
+roles:                        # department -> tool and model (/home-office:models)
+  conductor:     { tool: claude, model: sonnet }
+  classifier:    { tool: claude, model: haiku }
+  explorer:      { tool: claude, model: haiku }
+  architect:     { tool: claude, model: opus }
+  backend:       { tool: claude, model: sonnet }
+  frontend:      { tool: claude, model: sonnet }
+  reviewer:      { tool: claude, model: sonnet }
+  deep-reviewer: { tool: claude, model: opus }
+  tuning:        { tool: claude, model: sonnet }
+  # custom roles use the generic implementer, e.g.:
+  # mobile:      { tool: claude, model: sonnet, description: "Android app (Kotlin, Compose)" }
+
+risk_zones: []                # paths or areas that trigger the deep review
+hard_rules: []                # rules that must never be broken, in words (for planners and reviewers)
+guards: []                    # the enforceable part of the hard rules, checked by the hooks, e.g.:
+# - { deny: "database/migrations/**", except: [repo-x], reason: "Migrations only in repo-x" }
+generated_from: []            # templates that generate files inside repos; close warns when they change
+
+limits:
+  context_tokens: 150000
+  tuning_requests: 10
+  parallel_warning: 4
+  task_attempts: 2
