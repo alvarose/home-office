@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.3 — 2026-10-19
+- Git commands proposed to the user (commit, merge, push, cleanup) always name the repo with `git -C <absolute repo path>`, so they work from the work folder where the session runs.
+
 ## 0.4.0-pre.2 — 2026-10-19
 - "Campaigns" are now **batches**: `<work>/batches/NN-name/` with `batch.md` (template renamed from `campaign.md`) and `DECISIONS.md`. Existing work folders: rename `campaigns/` to `batches/` and each `campaign.md` to `batch.md`.
 

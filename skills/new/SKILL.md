@@ -37,7 +37,7 @@ If the user overrides, follow the user.
 2. Launch `home-office:implementer` (model from the role that matches the repo, else `roles.backend`). Its prompt starts with the line `HOME-OFFICE-WORKTREE: <repo>`, then: the request, the relevant knowledge sections (from the index), `hard_rules`, the paths it may delete (if any), the prepare commands and checks, and the limit of ~5 files.
 3. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-end --worktree <repo>` and read `gate` and `touched`. `fail`, `blocked` or `needs-plan-change` → tell the user (it may have outgrown the short lane; offer to restart it as a feature).
 4. Launch `home-office:reviewer` on the uncommitted diff of that repo. Show `git -C <repo> diff --stat` and the review → **gate 3**: wait for the user.
-5. Propose a commit message → **gate 4**: the user commits.
+5. Propose a commit message → **gate 4**: the user commits. Give the commands as `git -C <repo> …` (see `close`): the session runs in the work folder.
 6. Append one line to `<work>/<log>`: date, repo, what was done. Done.
 
 ## 2b. Feature lane
