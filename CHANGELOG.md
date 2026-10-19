@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The hand-over card passes the conductor's model to the new session; before, it inherited the model of the session that proposed it (often a top-tier one).
 - Links to documents: whenever a step writes or updates a document, the conductor ends its message with clickable Markdown links to it (brief, SPEC, PLAN, TASKS, STATE, REVIEW, DECISIONS). `resume` and `close` link the feature's documents, and `status` links each feature to its `STATE.md`.
 - Review findings are saved: the conductor writes the reviewers' findings to `features/NN-name/REVIEW.md` (new template), one dated section per round.
 - `HOME_OFFICE_CAP=0` disables the context cap for a session, like `HOME_OFFICE_GUARD=0` and `HOME_OFFICE_GATE=0`.
