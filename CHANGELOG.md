@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.2 — 2026-10-19
+- "Campaigns" are now **batches**: `<work>/batches/NN-name/` with `batch.md` (template renamed from `campaign.md`) and `DECISIONS.md`. Existing work folders: rename `campaigns/` to `batches/` and each `campaign.md` to `batch.md`.
+
 ## 0.4.0-pre.1 — 2026-10-19
 Pre-release for the pilot; 0.4.0 follows once the pilot batch is reviewed.
 - The hand-over card passes the conductor's model to the new session; before, it inherited the model of the session that proposed it (often a top-tier one).

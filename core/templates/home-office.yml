@@ -5,7 +5,7 @@ project: my-project
 type: compact                 # compact | multirepo
 language: en                  # language of the documents home-office writes for this project; change it with /home-office:language
 
-work: docs/work               # board, features, campaigns, log
+work: docs/work               # board, features, batches, log
 board: BOARD.md
 log: log.md
 

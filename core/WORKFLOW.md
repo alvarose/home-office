@@ -13,14 +13,14 @@ The cost of an agent grows with *number of calls × context size*. Short session
 
 ## Two pieces per project
 
-- **Work** (`docs/work/` in a compact project, a separate repo in a multi-repo project): the board, features, campaigns, log.
+- **Work** (`docs/work/` in a compact project, a separate repo in a multi-repo project): the board, features, batches, log.
 - **Knowledge** (`docs/knowledge/` or one or more separate sources): short cards per repo, an `INDEX.md`, architecture, rules.
 
 ## Language
 
 Each project chooses the language of the documents home-office writes for it: `language` in `.home-office.yml` (a name or code such as `es`, `en`, `pt-BR`). `init` proposes the language the user writes in; `language` (the command) changes it at any time.
 
-- **Written in `language`**: SPEC, PLAN, TASKS, STATE, DECISIONS, brief, REVIEW, campaigns, board, log, knowledge cards and indexes created by the plugin, and review findings. Headings, header labels and prose are translated from the English templates.
+- **Written in `language`**: SPEC, PLAN, TASKS, STATE, DECISIONS, brief, REVIEW, batches, board, log, knowledge cards and indexes created by the plugin, and review findings. Headings, header labels and prose are translated from the English templates.
 - **Kept as they are**: file names, the sections and their order (other commands find a section by its position in the template, never by its title), paths, commands, branch names, code, identifiers, and the fixed fields agents report to the conductor (`status: done`, `lane: short`…).
 - **Messages to the user** follow the language the user writes in.
 - **Changing it** affects new writing only. Existing documents are translated only if the user asks.
@@ -64,7 +64,7 @@ Four header lines (status, last session, branches, rework count) and four sectio
 - Branch `feature/NN-name` in every repo the feature touches, each in its own worktree.
 - Base branch per project; `close` proposes merges in layer order; the user merges.
 - Shared packages (declared in config): with several features in flight, the first one ready publishes; the others update to that version before publishing theirs.
-- **Campaigns**: the same kind of change across many repos. Each repo is a feature; the solutions chosen per rule are recorded once in the campaign's `DECISIONS.md` and reused.
+- **Batches**: the same kind of change across many repos. Each repo is a feature; the solutions chosen per rule are recorded once in the batch's `DECISIONS.md` and reused.
 
 ## Guards (hooks)
 

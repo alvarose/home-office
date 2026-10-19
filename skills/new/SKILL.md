@@ -44,14 +44,14 @@ If the user overrides, follow the user.
 
 ### Set up
 1. Assign `NN`: the next free number in `<work>/features/` (two digits). Name: `NN-<name from the classifier>`.
-2. Create `<work>/features/NN-name/` with `STATE.md` and `DECISIONS.md` from the templates. If the work belongs to a campaign the user mentions, link it in `STATE.md` and the campaign's repo table.
+2. Create `<work>/features/NN-name/` with `STATE.md` and `DECISIONS.md` from the templates. If the work belongs to a batch the user mentions, link it in `STATE.md` and the batch's repo table.
 3. Add a row to the board.
 
 ### Explore
 Launch `explorer` (`roles.explorer`) with the request, the brief template path and the destination `features/NN-name/brief.md`. Show its three-line summary and the link to the brief (see "Links to documents").
 
 ### SPEC → gate 1
-Launch `architect` (`roles.architect`) in mode `spec`, with the brief, the template and, if any, the campaign's `DECISIONS.md`. Show the user the SPEC's goal, scope and **decisions needed** (with the architect's recommendations). **Wait for explicit approval.** Record the user's choices in the feature's `DECISIONS.md` and mark the SPEC approved with the date. If the user changes something, relaunch the architect in mode `spec` with the changes.
+Launch `architect` (`roles.architect`) in mode `spec`, with the brief, the template and, if any, the batch's `DECISIONS.md`. Show the user the SPEC's goal, scope and **decisions needed** (with the architect's recommendations). **Wait for explicit approval.** Record the user's choices in the feature's `DECISIONS.md` and mark the SPEC approved with the date. If the user changes something, relaunch the architect in mode `spec` with the changes.
 
 ### PLAN + TASKS → gate 2
 Launch `architect` in mode `plan` with the approved SPEC, the brief, the board and the templates. Show: the approach, the layers and repos, the contract in short, crossings, and the list of TASKs (title, repo, role, number of files, files to delete). **Wait for explicit approval.**

@@ -12,7 +12,7 @@ Write every document in the language the conductor gives you (the project's `lan
 You work in one of two modes, given by the conductor.
 
 ## Mode `spec`
-From `brief.md` (and the user's request), write `SPEC.md` from its template: goal, for whom, in scope, out of scope, acceptance criteria, and **decisions needed** (each with options and your recommendation). If the feature belongs to a campaign, reuse the campaign's `DECISIONS.md` and only raise what is new.
+From `brief.md` (and the user's request), write `SPEC.md` from its template: goal, for whom, in scope, out of scope, acceptance criteria, and **decisions needed** (each with options and your recommendation). If the feature belongs to a batch, reuse the batch's `DECISIONS.md` and only raise what is new.
 
 ## Mode `plan`
 The SPEC is approved. Write `PLAN.md` and `TASKS.md` from their templates:
