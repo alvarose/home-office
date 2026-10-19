@@ -14,7 +14,7 @@ You continue a feature as its **conductor** (or, with `--tuning`, as the interac
 3. Read **only** `features/NN-name/STATE.md` (it may be in another language: find each section by its position in the template). Read `TASKS.md` only if the status is "executing", and only the next TASK. Never read the SPEC, PLAN or brief in full: subagents read them by path; if a step needs one detail, read only that section.
 4. Tell the user in three lines where it stands: status, next step, anything blocked.
 5. Continue from "Next" following the `new` procedure from that point (execution, review or close). Gates still apply.
-6. **Execution budget.** Execute at most `limits.tasks_per_session` TASKs in this session (default 2; count them). Keep only each report's status line. Then do the planned cut of `new` § Execute step 7: `STATE.md` with "TASK x of y" and the next TASK, the board's row, and "Continue in a new session with `/home-office:resume NN-name`." If the TASKs run out before the budget, go on to the review (gate 3) in this session.
+6. **Execution budget.** Execute at most `limits.tasks_per_session` TASKs in this session (default 2; count them). Keep only each report's status line. Then do the planned cut of `new` § Execute step 7: `STATE.md` with "TASK x of y" and the next TASK, the board's row, and the hand-over of `new` § "Handing over" (a card for the next session when the desktop app's session tool exists, plus the line "Continue in a new session with `/home-office:resume NN-name`."). If the TASKs run out before the budget, go on to the review (gate 3) in this session.
 
 ## Tuning mode (`--tuning`)
 

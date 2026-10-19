@@ -60,7 +60,13 @@ Launch `architect` in mode `plan` with the approved SPEC, the brief, the board a
 This session ends here; execution always starts in a fresh one. The conversation now holds the brief, SPEC and PLAN, and execution needs that room.
 1. Rewrite `STATE.md`: status "executing — TASK 0 of y", "Next" = TASK 1 (title, repo, role), and the gate 1 and 2 dates under "Decisions this session".
 2. Update the feature's row on the board.
-3. End with: "PLAN approved. Continue in a new session with `/home-office:resume NN-name`." Do not start any TASK in this session.
+3. Hand over (see "Handing over" below) with the line: "PLAN approved. Continue in a new session with `/home-office:resume NN-name`." Do not start any TASK in this session.
+
+### Handing over
+Every planned cut ends the same way, after `STATE.md` and the board's row are written:
+1. **Card.** If the Claude desktop app's session tool `mcp__ccd_session__start_session` exists (it may be deferred: load it with ToolSearch `select:mcp__ccd_session__start_session`), propose the next session as a card: `initiation: "own_initiative"`, `context: "fresh"`, `use_worktree: false` (the session must open in this work folder, where the config is; the plugin makes its own worktrees), `title`: "Continue NN-name" (in `language`), `prompt`: `/home-office:resume NN-name`, and `background`: two sentences in `language` with the feature, its status and next step from `STATE.md`, and that everything lives in `features/NN-name/`. A card only proposes: nothing runs until the user starts it.
+2. **Text.** Always end with the cut's line too (`/home-office:resume NN-name`), so the hand-over works without the app (CLI, other clients) or if the card is refused.
+3. If a card was proposed, add that this session can be archived once the new one has started (the card lives in this conversation).
 
 ### Execute
 Runs in sessions opened with `/home-office:resume NN-name`. Each session executes at most `limits.tasks_per_session` TASKs (default 2), then cuts (step 7).
@@ -77,7 +83,7 @@ For each TASK in order (respect `layers` and `Depends on`), reading from `TASKS.
 4. **Close the TASK.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-end --worktree <wt>` (add `--run-checks` for delegated work: it runs the prepare commands, the scope check and the checks there) → `gate` (`pass` / `fail` / null), `touched`, `problems`. Update `STATE.md` (done / next / rework) with the essentials only.
 5. **Decide.** `gate: pass` and report `done` → next TASK. Anything else (`gate: fail` — the executor already had `task_attempts` tries inside its run —, `blocked`, `needs-plan-change`, or delegated work out of scope) → **no new attempt**: write it under "Blocked" in `STATE.md`, add 1 to "Rework" and ask the user.
 6. If a TASK needs interactive tuning (browser, emulator, simulator, editor), finish the others first, then tell the user to open a session in that worktree and run `/home-office:resume NN-name --tuning`.
-7. **Planned cut.** After `limits.tasks_per_session` TASKs in this session, stop even if the context looks fine: make sure `STATE.md` says "TASK x of y" and names the next TASK (or "review" if they are all done), update the board's row, and end with: "Continue in a new session with `/home-office:resume NN-name`."
+7. **Planned cut.** After `limits.tasks_per_session` TASKs in this session, stop even if the context looks fine: make sure `STATE.md` says "TASK x of y" and names the next TASK (or "review" if they are all done), update the board's row, and hand over (see "Handing over") with the line: "Continue in a new session with `/home-office:resume NN-name`."
 
 ### Review → gate 3
 Launch `reviewer` (`roles.reviewer`) on the feature branches against `base_branch` in every repo touched. If any changed path matches `risk_zones`, also launch `deep-reviewer` (`roles.deep-reviewer`). Show `git diff --stat` per repo and the findings by severity. **Wait for the user.** Fixes go back through executors as new TASKs.
@@ -89,5 +95,5 @@ Run the `close` procedure (`/home-office:close`).
 
 - Pass each subagent only what its role needs. Never paste whole files into prompts; pass paths.
 - From each subagent's report keep only its status line (`status: …`, the gate result and one line of notes); the rest is in the files. Never reread the SPEC or the PLAN in full: subagents read them by path, and you read only the TASK you are about to open.
-- Sessions are cut on purpose, not when they are full: after gate 2, and after `limits.tasks_per_session` TASKs. Each cut writes `STATE.md` and hands over to `/home-office:resume NN-name`.
+- Sessions are cut on purpose, not when they are full: after gate 2, and after `limits.tasks_per_session` TASKs. Each cut writes `STATE.md` and hands over to `/home-office:resume NN-name` (card plus text line, see "Handing over").
 - If this conversation still becomes long (near `limits.context_tokens`), cut the same way at once.
