@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.7 — 2026-10-19
+- Automatic hand-overs work: `resume` no longer has `disable-model-invocation`, so a session started by a hand-over (its first message is `/home-office:resume NN-name`) can run it. Before, the Skill tool refused it and the new session waited for the user to type the command.
+
 ## 0.4.0-pre.6 — 2026-10-19
 - Finished sessions are archived (Claude desktop app only; the CLI is unchanged). `resume` archives the previous session of the feature after a hand-over when it is idle, and `close` archives the feature's other idle `feat: NN-name` sessions once it is done, then offers to archive itself as the very last action. A parent with other children still in use is skipped (archiving cascades to idle side sessions).
 - New `archive: ask | auto` in `.home-office.yml` (default `ask`: one question before archiving).

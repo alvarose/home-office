@@ -1,8 +1,7 @@
 ---
 name: resume
-description: Resume a home-office feature in a fresh session from its STATE.md. Use only when the user invokes /home-office:resume. Never reopens an old conversation.
+description: Resume a home-office feature in a fresh session from its STATE.md. Use only when the user invokes /home-office:resume, or when the session's first message is exactly `/home-office:resume NN-name` (a hand-over started by the previous session). Never reopens an old conversation.
 argument-hint: "[NN or NN-name] [--tuning]"
-disable-model-invocation: true
 ---
 
 # /home-office:resume
