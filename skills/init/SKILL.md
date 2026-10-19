@@ -50,7 +50,7 @@ Show the full summary; on confirmation, create:
 - `.home-office.yml` from the template, filled in (defaults for `roles` and `limits`);
 - the work folder with `BOARD.md` (or the board name chosen), `log.md`, `features/`, `campaigns/`;
 - the knowledge skeleton, if accepted;
-- the conductor's model as this folder's default, so new sessions opened here start on it instead of the user's default (often a top-tier model): `"model": "<roles.conductor.model>"` in `.claude/settings.json` next to `.home-office.yml`. Only when `roles.conductor.tool` is `claude`. If the file exists, add or change only that key and keep the rest; if it already has a different `model`, ask first. Subagents are unaffected: each agent sets its own model.
+- the conductor's model as this folder's default for the terminal CLI: `"model": "<roles.conductor.model>"` in `.claude/settings.json` next to `.home-office.yml`. Only when `roles.conductor.tool` is `claude`. If the file exists, add or change only that key and keep the rest; if it already has a different `model`, ask first. Subagents are unaffected: each agent sets its own model. Tell the user that in the Claude desktop app the model picker wins over this file (it remembers its own choice per user), so there they choose the conductor's model in the picker, or run `/model <roles.conductor.model>` at the start of the session.
 Board, log, cards and indexes are written in `language`: translate the templates' headings and labels, keep their structure.
 If the project already has a board, features folder or docs, reuse their names and paths in the config instead of creating new ones.
 
