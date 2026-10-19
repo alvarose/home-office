@@ -7,7 +7,7 @@ Tool-agnostic description of the method. Adapters (Claude Code today, Codex next
 1. **Think with a strong model, execute with cheaper ones.** Each role ("department") has its own tool and model, editable per project.
 2. **State lives in files, not in conversations.** Sessions are disposable. A new session resumes from `STATE.md`, never from an old conversation.
 3. **Minimal context per agent.** Every task says exactly which files it may touch and which knowledge sections it must read.
-4. **The human approves, the agents work.** Four gates: SPEC, PLAN + TASKS, diff, commit.
+4. **The human approves, the agents work.** Four gates: SPEC, PLAN + TASKS, diff, commit. Commits on a feature branch can be delegated (`commit: ask|auto`); merges to the base branch and pushes cannot.
 
 The cost of an agent grows with *number of calls × context size*. Short sessions, minimal context and the right model for each step keep both small.
 
@@ -40,7 +40,7 @@ A classifier decides; the user can override with one word.
 0. **Entry** (`new`): the session opened in the work folder becomes the **conductor** (cheap model: the work folder's `.claude/settings.json` makes it the default for new terminal CLI sessions there; in the Claude desktop app, pick it in the model picker). It launches every other role as a subagent and keeps only their summaries.
 1. **Explore**: the explorer (cheap model) writes `brief.md`: repos, files, knowledge sections, risks, open questions.
 2. **Specify and plan**: the architect (strong model, subagent) writes `SPEC.md` → **gate 1**; then `PLAN.md` (contract between layers, "Crossings" if another in-flight feature touches the same repos) and `TASKS.md` → **gate 2**. **Planned cut**: the session writes `STATE.md` and ends; execution starts in a new session (`resume`).
-3. **Execute**: one fresh subagent per TASK, inside the feature's branch/worktree of that repo, in layer order. Only the files listed in the TASK, plus deleting the files in its `Delete:` list. The repo's `prepare` commands (e.g. code generators) run before its checks on every TASK, and the checks must pass. Two attempts at most; then stop and ask. Each session executes at most `tasks_per_session` TASKs, then writes `STATE.md` and hands over to a new one. The conductor keeps only each report's status line and never rereads the SPEC or PLAN in full: subagents read them by path.
+3. **Execute**: one fresh subagent per TASK, inside the feature's branch/worktree of that repo, in layer order. Only the files listed in the TASK, plus deleting the files in its `Delete:` list. The repo's `prepare` commands (e.g. code generators) run before its checks on every TASK, and the checks must pass. Two attempts at most; then stop and ask. A TASK that passes is committed on the feature branch (one question per session, or automatically with `commit: auto`), so work never sits uncommitted across sessions. Each session executes at most `tasks_per_session` TASKs, then writes `STATE.md` and hands over to a new one. The conductor keeps only each report's status line and never rereads the SPEC or PLAN in full: subagents read them by path.
 4. **Interactive tuning** (optional): the only session opened directly in a repo (browser, emulator, simulator, editor). Max 10 tuning requests or the context cap, then close and reopen.
 5. **Review**: reviewer on the diff against the knowledge sources; deep reviewer (strong model) only when the diff touches a risk zone. The conductor writes their findings to `REVIEW.md` → **gate 3**.
 

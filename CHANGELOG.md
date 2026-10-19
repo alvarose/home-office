@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.8 — 2026-10-19
+- Commit per TASK on the feature branch: a TASK that passes its gate is committed in its worktree (`NN-name / TASK n: <title>`, only its `touched` files). New `commit: ask | auto` in `.home-office.yml`: `ask` (default) asks once per session, at the planned cut; `auto` commits each TASK as it passes. SHAs go to `STATE.md`. Merges to the base branch and pushes stay with the user.
+
 ## 0.4.0-pre.7 — 2026-10-19
 - Automatic hand-overs work: `resume` no longer has `disable-model-invocation`, so a session started by a hand-over (its first message is `/home-office:resume NN-name`) can run it. Before, the Skill tool refused it and the new session waited for the user to type the command.
 
