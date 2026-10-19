@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.9 — 2026-10-19
+- New `/home-office:task "<job>"`: one self-contained check, cleanup or mechanical change, even across several repos, with no SPEC, PLAN or TASKs. Read-only checks go to the explorer, changes to one implementer per repo under the usual guards and checks. It reports a results table, logs one line and ends in the same session (archiving itself with `archive: auto`). Requests that need design are sent to `/home-office:new`.
+- Session titles: `/home-office:task <job>` sessions are titled `task: <job>`.
+
 ## 0.4.0-pre.8 — 2026-10-19
 - Commit per TASK on the feature branch: a TASK that passes its gate is committed in its worktree (`NN-name / TASK n: <title>`, only its `touched` files). New `commit: ask | auto` in `.home-office.yml`: `ask` (default) asks once per session, at the planned cut; `auto` commits each TASK as it passes. SHAs go to `STATE.md`. Merges to the base branch and pushes stay with the user.
 

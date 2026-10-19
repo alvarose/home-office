@@ -57,4 +57,4 @@ Show the full summary; on confirmation, create:
 Board, log, cards and indexes are written in `language`: translate the templates' headings and labels, keep their structure.
 If the project already has a board, features folder or docs, reuse their names and paths in the config instead of creating new ones.
 
-End with the commands the user will use from now on: `new`, `resume`, `close`, `status`, `models`, `sources`, `language` — and the rule: sessions are opened in the folder that contains `.home-office.yml`.
+End with the commands the user will use from now on: `new`, `task`, `resume`, `close`, `status`, `models`, `sources`, `language` — and the rule: sessions are opened in the folder that contains `.home-office.yml`.

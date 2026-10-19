@@ -4,7 +4,8 @@ Acts only in sessions opened under a folder that has a `.home-office.yml`, and o
 prompts that start a home-office command:
   - `/home-office:resume NN[-name] [--tuning]` -> "feat: NN-name" (" · tuning" for --tuning),
     with the full name taken from `<work>/features/`;
-  - `/home-office:new <request>`                -> "new: <request, shortened>".
+  - `/home-office:new <request>`                -> "new: <request, shortened>";
+  - `/home-office:task <request>`               -> "task: <request, shortened>".
 The conductor can refine the title later (e.g. "feat: NN-name" once `new` assigns NN).
 
 It never blocks anything. Fail-open. `HOME_OFFICE_TITLE=0` disables it.
@@ -18,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import emit, find_up, read_stdin_json  # noqa: E402
 
 RESUME_RE = re.compile(r"^\s*/home-office:resume\s+(\S+)(.*)$", re.DOTALL)
-NEW_RE = re.compile(r"^\s*/home-office:new\s+(.+)$", re.DOTALL)
+NEW_RE = re.compile(r"^\s*/home-office:(new|task)\s+(.+)$", re.DOTALL)
 WORK_RE = re.compile(r"^\s*work\s*:\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
 MAX_LEN = 60
 
@@ -60,7 +61,7 @@ def title_for(prompt: str, config_path: str):
         return title + (" · tuning" if "--tuning" in m.group(2) else "")
     m = NEW_RE.match(prompt)
     if m:
-        return "new: " + shorten(m.group(1).strip().strip("\"'"))
+        return m.group(1) + ": " + shorten(m.group(2).strip().strip("\"'"))
     return None
 
 

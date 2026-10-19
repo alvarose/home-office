@@ -33,6 +33,7 @@ The plugin's own files (skills, agents, templates, this document) are always in 
 A classifier decides; the user can override with one word.
 
 - **Short lane**: small fix, small change, question. One implementer subagent, no SPEC or plan. Still goes through review, diff and commit (gates 3 and 4) and leaves one line in `log.md`.
+- **Task** (`/home-office:task`, chosen by the user): one self-contained job — a check, a cleanup, a mechanical change — across any number of repos, with no design. One subagent per repo (the explorer for read-only checks), a results table, one line in `log.md`, and the session ends. Anything that needs decisions goes to the feature lane.
 - **Feature lane**: anything that touches more than one repo, changes a contract or schema, or is estimated at more than ~5 files.
 
 ## Feature lane

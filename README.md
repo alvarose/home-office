@@ -32,6 +32,7 @@ From a local clone: `/plugin marketplace add <path to the clone>`.
 | `/home-office:models` | Show or change the tool and model of each department |
 | `/home-office:sources` | List, add, edit or remove knowledge sources |
 | `/home-office:language [lang]` | Show or change the language of the project's documents |
+| `/home-office:task "<job>"` | One self-contained check, cleanup or mechanical change, even across repos; no SPEC or PLAN, ends in the same session |
 
 Open sessions in the folder that contains `.home-office.yml`.
 

@@ -27,7 +27,7 @@ If it is empty, ask what the user wants to do and stop.
 
 Launch the `classifier` agent (model from `roles.classifier`) with the request, the repos and their roles, and the path of each source's index. Show its answer in one line: "Lane: feature (touches api and web). Say 'short' to change it."
 
-If the user overrides, follow the user.
+If the user overrides, follow the user. If the request is clearly a one-off check or cleanup across repos with nothing to design, say in one line that `/home-office:task "<request>"` fits better and let the user choose.
 
 ## 2a. Short lane
 
