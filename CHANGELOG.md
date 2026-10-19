@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.6 — 2026-10-19
+- Finished sessions are archived (Claude desktop app only; the CLI is unchanged). `resume` archives the previous session of the feature after a hand-over when it is idle, and `close` archives the feature's other idle `feat: NN-name` sessions once it is done, then offers to archive itself as the very last action. A parent with other children still in use is skipped (archiving cascades to idle side sessions).
+- New `archive: ask | auto` in `.home-office.yml` (default `ask`: one question before archiving).
+
 ## 0.4.0-pre.5 — 2026-10-19
 - Hand-overs are mandatory in the Claude desktop app: a planned cut always starts or proposes the next session, never just prints the command (the pilot showed a cut that skipped the card).
 - New `handover: card | auto` in `.home-office.yml`. With `auto`, the cut starts the next session by itself unless the next step waits for the user (a gate, a push, a merge, anything under "Blocked"); then it falls back to the card.

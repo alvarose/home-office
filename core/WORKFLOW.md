@@ -55,6 +55,7 @@ Four header lines (status, last session, branches, rework count) and four sectio
 
 - Context cap per session: 150,000 tokens → close and start a new session instead of compacting.
 - TASKs per conductor session: 2 → then a planned cut, before the context fills up. In the Claude desktop app the next session is proposed as a card, or started on its own with `handover: auto` when nothing waits for the user. The planning session (brief, SPEC, PLAN) also ends at gate 2. Real use shows a conductor's context holds about SPEC + PLAN + two TASKs.
+- Finished sessions (Claude desktop app only): after a hand-over, `resume` archives the previous session of the feature if idle; `close` archives the feature's other idle sessions when it is done, and offers to archive itself last. `archive: ask` (default) asks once; `auto` does not. A parent with other children still in use is never archived (archiving cascades to idle side sessions).
 - Tuning: 10 requests per session.
 - Attempts per TASK: 2.
 - Parallel features: no limit, warning from 4.

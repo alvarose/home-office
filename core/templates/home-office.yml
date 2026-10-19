@@ -50,3 +50,4 @@ limits:
 
 handover: card                # at a planned cut, in the Claude desktop app: card = propose the next session
                               # (one click); auto = start it, unless the next step waits for you
+archive: ask                  # finished sessions in the Claude desktop app: ask = ask once before archiving; auto = archive
