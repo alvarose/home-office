@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Links to documents: whenever a step writes or updates a document, the conductor ends its message with clickable Markdown links to it (brief, SPEC, PLAN, TASKS, STATE, REVIEW, DECISIONS). `resume` and `close` link the feature's documents, and `status` links each feature to its `STATE.md`.
+- Review findings are saved: the conductor writes the reviewers' findings to `features/NN-name/REVIEW.md` (new template), one dated section per round.
 - `HOME_OFFICE_CAP=0` disables the context cap for a session, like `HOME_OFFICE_GUARD=0` and `HOME_OFFICE_GATE=0`.
 - Executors can delete files and folders: a TASK lists them under `Delete:` (template `TASKS.md`), the conductor passes them with `ho.py task-start --delete <path>`, and the scope guard allows `rm`, `unlink`, `git rm` and PowerShell `Remove-Item` only when every target is an exact path in that list (a listed folder covers everything under it). The checks gate accepts those deletions as in scope. The short lane can pass `--delete` too, for paths the request names and the user confirms.
 - Per-repo `prepare` commands in `.home-office.yml` (e.g. code generators that rebuild client helpers from server routes), passed with `ho.py task-start --prepare "<cmd>"` and run before the checks on every TASK. Files they write never count as changed by the TASK.

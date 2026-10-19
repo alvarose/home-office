@@ -18,4 +18,4 @@ Write STATE, DECISIONS, board and log in the project's `language` (see "Language
 6. **Feature finished?** Propose merging `feature/NN-name` into `base_branch` repo by repo, in `layers` order, and mention any shared package that must be published first (see "Shared packages" in the PLAN). The user merges. When the user confirms the merges, offer to remove the worktrees (`git -C <repo> worktree remove <path>`) and delete the branches; deleting needs the user's permission. Mark the feature "done" on the board.
 7. **Knowledge**: list what should be promoted to a knowledge source (new rules, architecture changes) so the user can add it. If any file listed in `generated_from` changed, warn that the generated files inside the repos must be regenerated.
 8. **Short lane**: make sure its line is in the log.
-9. End with: "Session closed. Continue with `/home-office:resume NN-name` in a new session."
+9. End with one line of links to what you wrote (`STATE.md`, `DECISIONS.md`, the board; see `new` § "Links to documents"), then: "Session closed. Continue with `/home-office:resume NN-name` in a new session."

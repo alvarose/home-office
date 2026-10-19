@@ -48,7 +48,7 @@ If the user overrides, follow the user.
 3. Add a row to the board.
 
 ### Explore
-Launch `explorer` (`roles.explorer`) with the request, the brief template path and the destination `features/NN-name/brief.md`. Show its three-line summary.
+Launch `explorer` (`roles.explorer`) with the request, the brief template path and the destination `features/NN-name/brief.md`. Show its three-line summary and the link to the brief (see "Links to documents").
 
 ### SPEC → gate 1
 Launch `architect` (`roles.architect`) in mode `spec`, with the brief, the template and, if any, the campaign's `DECISIONS.md`. Show the user the SPEC's goal, scope and **decisions needed** (with the architect's recommendations). **Wait for explicit approval.** Record the user's choices in the feature's `DECISIONS.md` and mark the SPEC approved with the date. If the user changes something, relaunch the architect in mode `spec` with the changes.
@@ -86,10 +86,19 @@ For each TASK in order (respect `layers` and `Depends on`), reading from `TASKS.
 7. **Planned cut.** After `limits.tasks_per_session` TASKs in this session, stop even if the context looks fine: make sure `STATE.md` says "TASK x of y" and names the next TASK (or "review" if they are all done), update the board's row, and hand over (see "Handing over") with the line: "Continue in a new session with `/home-office:resume NN-name`."
 
 ### Review → gate 3
-Launch `reviewer` (`roles.reviewer`) on the feature branches against `base_branch` in every repo touched. If any changed path matches `risk_zones`, also launch `deep-reviewer` (`roles.deep-reviewer`). Show `git diff --stat` per repo and the findings by severity. **Wait for the user.** Fixes go back through executors as new TASKs.
+Launch `reviewer` (`roles.reviewer`) on the feature branches against `base_branch` in every repo touched. If any changed path matches `risk_zones`, also launch `deep-reviewer` (`roles.deep-reviewer`). Write their findings to `features/NN-name/REVIEW.md` from the template (one dated section per review round, newest first, in `language`; the reviewers are read-only, so you write it from their reports). Show `git diff --stat` per repo, the findings by severity and the link to `REVIEW.md`. **Wait for the user.** Fixes go back through executors as new TASKs.
 
 ### Close → gate 4
 Run the `close` procedure (`/home-office:close`).
+
+## Links to documents
+
+Whenever a step writes or updates a document, end that message with one line of links so the user can open each one with a click, e.g. `Read: [brief](docs/work/features/07-x/brief.md) · [SPEC](docs/work/features/07-x/SPEC.md)`.
+- Markdown links, with paths relative to the current working directory (the folder with `.home-office.yml`) and forward slashes. Most clients make them clickable; the Claude desktop app opens them in its file pane.
+- Label them with the document's name in `language`.
+- Link only what this step wrote or changed: brief after Explore; SPEC at gate 1; PLAN and TASKS at gate 2; `STATE.md` after each TASK and at every cut; `REVIEW.md` at gate 3; `STATE.md` and `DECISIONS.md` at close.
+- Files inside worktrees are outside this folder and may not open from here: name them as `path` in code, never as links.
+- Links never replace the summary the step asks for: the user decides from the summary and reads the documents when they want.
 
 ## Context discipline
 
