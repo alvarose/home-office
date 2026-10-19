@@ -74,7 +74,9 @@ The rules above are enforced, not only requested. They act only inside a worktre
 - **checks gate** (when an executor finishes): runs the repo's `prepare` commands, compares the files changed since the task started with the list (files written by `prepare` and planned deletions are in scope), and runs the repo's checks. On failure the executor is sent back to fix it, up to `task_attempts` times; then the task is marked `fail` and the conductor escalates. Where no executor gate runs (delegated tools, tuning), `task-end --run-checks` does the same once.
 - **context cap** (on each prompt and after each subagent): warns at 80 % of `limits.context_tokens` and, over the cap, tells the session to close and continue in a new one.
 
-All guards are fail-open: an error in a guard never blocks work. `HOME_OFFICE_GUARD=0`, `HOME_OFFICE_GATE=0` and `HOME_OFFICE_CAP=0` disable the scope guard, the checks gate and the context cap for a session (set them before starting it).
+- **session title** (on each prompt): `/home-office:resume NN` titles the session `feat: NN-name`, and `/home-office:new <request>` titles it `new: <request>`. In the Claude desktop app, `new` then renames it to `feat: NN-name` (or `short: <name>`) once the work has a name.
+
+All guards are fail-open: an error in a guard never blocks work. `HOME_OFFICE_GUARD=0`, `HOME_OFFICE_GATE=0`, `HOME_OFFICE_CAP=0` and `HOME_OFFICE_TITLE=0` disable the scope guard, the checks gate, the context cap and the session titles for a session (set them before starting it).
 
 ## Delegation
 

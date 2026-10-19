@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.4 — 2026-10-19
+- Session titles: a new UserPromptSubmit hook (`hooks/session_title.py`) titles `/home-office:resume NN` sessions `feat: NN-name` (`· tuning` with `--tuning`) and `/home-office:new <request>` sessions `new: <request>`. In the Claude desktop app, `new` renames the session to `feat: NN-name` or `short: <name>` once the work is named, and hand-over cards use the same `feat: NN-name` title. `HOME_OFFICE_TITLE=0` turns it off.
+
 ## 0.4.0-pre.3 — 2026-10-19
 - Git commands proposed to the user (commit, merge, push, cleanup) always name the repo with `git -C <absolute repo path>`, so they work from the work folder where the session runs.
 

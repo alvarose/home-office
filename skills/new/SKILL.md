@@ -31,6 +31,7 @@ If the user overrides, follow the user.
 
 ## 2a. Short lane
 
+0. If the desktop tool `mcp__ccd_session_mgmt__set_session_title` exists, rename this session to `short: <name from the classifier>` (`session_id: "self"`).
 1. Pick the repo (`<repo>` = its absolute path). Open an open-scope task on it, so hard rules and checks still apply:
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-start --worktree <repo> --task "short: <name>" [--delete <path>]… --deny "<glob>=<reason>"… --prepare "<cmd>"… --check "<cmd>"… --attempts <limits.task_attempts>`
    (`--deny` from the `guards` that apply to this repo; `--prepare` from its `prepare`; `--check` from its `checks`; no `--file`. `--delete` only for files or folders the request clearly says to remove, by exact path, after confirming the list with the user.)
@@ -46,6 +47,7 @@ If the user overrides, follow the user.
 1. Assign `NN`: the next free number in `<work>/features/` (two digits). Name: `NN-<name from the classifier>`.
 2. Create `<work>/features/NN-name/` with `STATE.md` and `DECISIONS.md` from the templates. If the work belongs to a batch the user mentions, link it in `STATE.md` and the batch's repo table.
 3. Add a row to the board.
+4. **Session title.** A hook titled this session "new: <request>". Rename it to `feat: NN-name` if the Claude desktop app's tool `mcp__ccd_session_mgmt__set_session_title` exists (it may be deferred: load it with ToolSearch `select:mcp__ccd_session_mgmt__set_session_title`), with `session_id: "self"`. Elsewhere, leave it: `resume` sessions get `feat: NN-name` from the hook.
 
 ### Explore
 Launch `explorer` (`roles.explorer`) with the request, the brief template path and the destination `features/NN-name/brief.md`. Show its three-line summary and the link to the brief (see "Links to documents").
@@ -64,7 +66,7 @@ This session ends here; execution always starts in a fresh one. The conversation
 
 ### Handing over
 Every planned cut ends the same way, after `STATE.md` and the board's row are written:
-1. **Card.** If the Claude desktop app's session tool `mcp__ccd_session__start_session` exists (it may be deferred: load it with ToolSearch `select:mcp__ccd_session__start_session`), propose the next session as a card: `initiation: "own_initiative"`, `context: "fresh"`, `use_worktree: false` (the session must open in this work folder, where the config is; the plugin makes its own worktrees), `model`: the full model id for `roles.conductor.model` (e.g. `sonnet` → the current Sonnet id) when its tool is `claude` — without it the new session inherits this session's model, not the folder's default, `title`: "Continue NN-name" (in `language`), `prompt`: `/home-office:resume NN-name`, and `background`: two sentences in `language` with the feature, its status and next step from `STATE.md`, and that everything lives in `features/NN-name/`. A card only proposes: nothing runs until the user starts it.
+1. **Card.** If the Claude desktop app's session tool `mcp__ccd_session__start_session` exists (it may be deferred: load it with ToolSearch `select:mcp__ccd_session__start_session`), propose the next session as a card: `initiation: "own_initiative"`, `context: "fresh"`, `use_worktree: false` (the session must open in this work folder, where the config is; the plugin makes its own worktrees), `model`: the full model id for `roles.conductor.model` (e.g. `sonnet` → the current Sonnet id) when its tool is `claude` — without it the new session inherits this session's model, not the folder's default, `title`: `feat: NN-name` (the same title the hook gives `resume` sessions), `prompt`: `/home-office:resume NN-name`, and `background`: two sentences in `language` with the feature, its status and next step from `STATE.md`, and that everything lives in `features/NN-name/`. A card only proposes: nothing runs until the user starts it.
 2. **Text.** Always end with the cut's line too (`/home-office:resume NN-name`), so the hand-over works without the app (CLI, other clients) or if the card is refused.
 3. If a card was proposed, add that this session can be archived once the new one has started (the card lives in this conversation).
 

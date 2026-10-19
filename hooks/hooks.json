@@ -1,5 +1,5 @@
 {
-  "description": "home-office guards: TASK scope and hard rules on edits, checks gate when an executor finishes, context cap per session.",
+  "description": "home-office guards: TASK scope and hard rules on edits, checks gate when an executor finishes, context cap per session, session titles.",
   "hooks": {
     "PreToolUse": [
       {
@@ -19,7 +19,8 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/context_cap.py\"", "timeout": 15 }
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/context_cap.py\"", "timeout": 15 },
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/session_title.py\"", "timeout": 15 }
         ]
       }
     ],
