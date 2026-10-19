@@ -34,7 +34,8 @@ Ask for:
 - **base branch** (detect the default branch of each repo; ask if they differ);
 - **shared packages**: repos other repos depend on (detect path/VCS dependencies between siblings where possible);
 - **risk zones** that trigger the deep review;
-- **hard rules** that must never be broken, in words; and, for those that are about paths, the enforceable **guards** (`deny` glob, `except` repos, `reason`) that the hooks will apply.
+- **hard rules** that must never be broken, in words; and, for those that are about paths, the enforceable **guards** (`deny` glob, `except` repos, `reason`) that the hooks will apply;
+- **handover**: at a planned cut, should the next session be proposed as a card (`card`, default) or started automatically when nothing waits for the user (`auto`)? Only matters in the Claude desktop app.
 Everything is optional.
 
 ## 5. Knowledge sources

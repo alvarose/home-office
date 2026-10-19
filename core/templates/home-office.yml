@@ -47,3 +47,6 @@ limits:
   parallel_warning: 4
   task_attempts: 2
   tasks_per_session: 2        # TASKs a conductor session executes before it closes and hands over
+
+handover: card                # at a planned cut, in the Claude desktop app: card = propose the next session
+                              # (one click); auto = start it, unless the next step waits for you

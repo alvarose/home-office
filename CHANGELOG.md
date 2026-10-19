@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.5 — 2026-10-19
+- Hand-overs are mandatory in the Claude desktop app: a planned cut always starts or proposes the next session, never just prints the command (the pilot showed a cut that skipped the card).
+- New `handover: card | auto` in `.home-office.yml`. With `auto`, the cut starts the next session by itself unless the next step waits for the user (a gate, a push, a merge, anything under "Blocked"); then it falls back to the card.
+
 ## 0.4.0-pre.4 — 2026-10-19
 - Session titles: a new UserPromptSubmit hook (`hooks/session_title.py`) titles `/home-office:resume NN` sessions `feat: NN-name` (`· tuning` with `--tuning`) and `/home-office:new <request>` sessions `new: <request>`. In the Claude desktop app, `new` renames the session to `feat: NN-name` or `short: <name>` once the work is named, and hand-over cards use the same `feat: NN-name` title. `HOME_OFFICE_TITLE=0` turns it off.
 
