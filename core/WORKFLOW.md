@@ -37,7 +37,7 @@ A classifier decides; the user can override with one word.
 
 ## Feature lane
 
-0. **Entry** (`new`): the session opened in the work folder becomes the **conductor** (cheap model). It launches every other role as a subagent and keeps only their summaries.
+0. **Entry** (`new`): the session opened in the work folder becomes the **conductor** (cheap model; the work folder's `.claude/settings.json` makes it the default for new sessions there). It launches every other role as a subagent and keeps only their summaries.
 1. **Explore**: the explorer (cheap model) writes `brief.md`: repos, files, knowledge sections, risks, open questions.
 2. **Specify and plan**: the architect (strong model, subagent) writes `SPEC.md` → **gate 1**; then `PLAN.md` (contract between layers, "Crossings" if another in-flight feature touches the same repos) and `TASKS.md` → **gate 2**. **Planned cut**: the session writes `STATE.md` and ends; execution starts in a new session (`resume`).
 3. **Execute**: one fresh subagent per TASK, inside the feature's branch/worktree of that repo, in layer order. Only the files listed in the TASK, plus deleting the files in its `Delete:` list. The repo's `prepare` commands (e.g. code generators) run before its checks on every TASK, and the checks must pass. Two attempts at most; then stop and ask. Each session executes at most `tasks_per_session` TASKs, then writes `STATE.md` and hands over to a new one. The conductor keeps only each report's status line and never rereads the SPEC or PLAN in full: subagents read them by path.

@@ -19,7 +19,7 @@ If it is empty, ask what the user wants to do and stop.
 
 1. Read `.home-office.yml` in the current working directory. If it is not here, stop: tell the user to open the session in the folder that contains it (or run `/home-office:init` there). Do not search other folders and do not work without it.
 2. Paths in the config are relative to that file. Templates live in `${CLAUDE_PLUGIN_ROOT}/core/templates/`.
-3. The conductor should run on a cheap model (`roles.conductor`). If this session is on a top-tier model, suggest `/model <roles.conductor.model>` once and continue.
+3. The conductor should run on a cheap model (`roles.conductor`). If this session is on a top-tier model, suggest `/model <roles.conductor.model>` once and continue. If `.claude/settings.json` next to the config has no `model`, offer once to add `"model": "<roles.conductor.model>"` so new sessions here start on it (see `init` § 7).
 4. Read the board (`<work>/<board>`). If the number of features in flight reaches `limits.parallel_warning`, warn the user once.
 5. **Language.** Every document you or a subagent writes (STATE, DECISIONS, brief, SPEC, PLAN, TASKS, board, log) is written in `language` (if missing: the language the user writes in), following "Language" in `${CLAUDE_PLUGIN_ROOT}/core/WORKFLOW.md`. Pass `language` to every subagent that writes a document or findings (explorer, architect, reviewer, deep-reviewer). Talk to the user in the language they write in.
 
