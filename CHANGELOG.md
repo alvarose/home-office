@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+
+## 0.4.0-pre.1 — 2026-10-19
+Pre-release for the pilot; 0.4.0 follows once the pilot batch is reviewed.
 - The hand-over card passes the conductor's model to the new session; before, it inherited the model of the session that proposed it (often a top-tier one).
 - Links to documents: whenever a step writes or updates a document, the conductor ends its message with clickable Markdown links to it (brief, SPEC, PLAN, TASKS, STATE, REVIEW, DECISIONS). `resume` and `close` link the feature's documents, and `status` links each feature to its `STATE.md`.
 - Review findings are saved: the conductor writes the reviewers' findings to `features/NN-name/REVIEW.md` (new template), one dated section per round.
