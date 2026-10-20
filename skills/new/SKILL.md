@@ -1,7 +1,7 @@
 ---
 name: new
 description: Start new work with home-office. Classifies the request into the short lane or the feature lane and, for features, runs explore → SPEC (gate 1) → PLAN + TASKS (gate 2) → execution → review (gate 3) → close. Use only when the user invokes /home-office:new.
-argument-hint: "<what you want to do>"
+argument-hint: "<what you want to do> [--stream <name>]"
 disable-model-invocation: true
 ---
 
@@ -46,14 +46,15 @@ If the user overrides, follow the user. If the request is clearly a one-off chec
 ### Set up
 1. Assign `NN`: the next free number in `<work>/features/` (two digits). Name: `NN-<name from the classifier>`.
 2. Create `<work>/features/NN-name/` with `STATE.md` and `DECISIONS.md` from the templates. If the work belongs to a batch the user mentions, link it in `STATE.md` and the batch's repo table.
-3. Add a row to the board.
-4. **Session title.** A hook titled this session "new: <request>". Rename it to `feat: NN-name` if the Claude desktop app's tool `mcp__ccd_session_mgmt__set_session_title` exists (it may be deferred: load it with ToolSearch `select:mcp__ccd_session_mgmt__set_session_title`), with `session_id: "self"`. Elsewhere, leave it: `resume` sessions get `feat: NN-name` from the hook.
+3. **Stream.** The feature belongs to a stream if the request has `--stream <name>` (strip the flag from the request), names a stream, or comes from `/home-office:stream next`. Resolve `<name>` (`NN`, `NN-name` or a unique part of the name) against `<work>/streams/`; if nothing matches, ask. Then: write `Stream: streams/NN-name` in `STATE.md` (otherwise `Stream: none`); in the stream's `stream.md` set this feature's roadmap row to `in progress` and fill its Link with `features/NN-name` (if the request matches no planned row, add one at the end); and move this session into the stream's sidebar group (see `stream` § "Sidebar group"). Pass `stream.md` to the explorer and the architect as shared decisions, like a batch's `DECISIONS.md`. Without a stream, skip all this.
+4. Add a row to the board: under the feature's stream heading (`## streams/NN-name`, created if missing), or under `## Other` if it has no stream.
+5. **Session title.** A hook titled this session "new: <request>". Rename it to `feat: NN-name` if the Claude desktop app's tool `mcp__ccd_session_mgmt__set_session_title` exists (it may be deferred: load it with ToolSearch `select:mcp__ccd_session_mgmt__set_session_title`), with `session_id: "self"`. Elsewhere, leave it: `resume` sessions get `feat: NN-name` from the hook.
 
 ### Explore
 Launch `explorer` (`roles.explorer`) with the request, the brief template path and the destination `features/NN-name/brief.md`. Show its three-line summary and the link to the brief (see "Links to documents").
 
 ### SPEC → gate 1
-Launch `architect` (`roles.architect`) in mode `spec`, with the brief, the template and, if any, the batch's `DECISIONS.md`. Show the user the SPEC's goal, scope and **decisions needed** (with the architect's recommendations). **Wait for explicit approval.** Record the user's choices in the feature's `DECISIONS.md` and mark the SPEC approved with the date. If the user changes something, relaunch the architect in mode `spec` with the changes.
+Launch `architect` (`roles.architect`) in mode `spec`, with the brief, the template and, if any, the batch's `DECISIONS.md` and the stream's `stream.md` (its shared decisions and roadmap; raise only what is new). Show the user the SPEC's goal, scope and **decisions needed** (with the architect's recommendations). **Wait for explicit approval.** Record the user's choices in the feature's `DECISIONS.md` and mark the SPEC approved with the date. If the user changes something, relaunch the architect in mode `spec` with the changes.
 
 ### PLAN + TASKS → gate 2
 Launch `architect` in mode `plan` with the approved SPEC, the brief, the board and the templates. Show: the approach, the layers and repos, the contract in short, crossings, and the list of TASKs (title, repo, role, number of files, files to delete). **Wait for explicit approval.**
@@ -69,7 +70,7 @@ Every planned cut ends the same way, after `STATE.md` and the board's row are wr
 1. **Next session.** If the Claude desktop app's session tool `mcp__ccd_session__start_session` exists (it may be deferred: load it with ToolSearch `select:mcp__ccd_session__start_session`), call it before writing your final message. How depends on `handover` in `.home-office.yml` (default `card`):
    - `auto`, and the next step needs nothing from the user (STATE's "Blocked" section is empty, and the next step is not a gate, a push, a merge or any other action that waits for the user's approval): **start** it with `initiation: "user_asked"` — the user asked for automatic hand-overs in the project's config. Then say in one line that it has started, with a link to it.
    - Otherwise (`card`, or the next step waits for the user): **propose** it as a card with `initiation: "own_initiative"`; nothing runs until the user starts it with one click.
-   Same fields either way: `context: "fresh"`, `use_worktree: false` (the session must open in this work folder, where the config is; the plugin makes its own worktrees), `model`: the full model id for `roles.conductor.model` (e.g. `sonnet` → the current Sonnet id) when its tool is `claude` — without it the new session inherits this session's model, not the folder's default, `title`: `feat: NN-name` (the same title the hook gives `resume` sessions), `prompt`: `/home-office:resume NN-name`, and `background`: two sentences in `language` with the feature, its status and next step from `STATE.md`, and that everything lives in `features/NN-name/`. If the app refuses the start (for example on a turn another session started), fall back to the card.
+   If the feature has a stream, move the new session into the stream's sidebar group once it exists (`mcp__ccd_sidebar__move_sessions`, see `stream` § "Sidebar group"); a card has no session until the user starts it, so `resume` does it then. Same fields either way: `context: "fresh"`, `use_worktree: false` (the session must open in this work folder, where the config is; the plugin makes its own worktrees), `model`: the full model id for `roles.conductor.model` (e.g. `sonnet` → the current Sonnet id) when its tool is `claude` — without it the new session inherits this session's model, not the folder's default, `title`: `feat: NN-name` (the same title the hook gives `resume` sessions), `prompt`: `/home-office:resume NN-name`, and `background`: two sentences in `language` with the feature, its status and next step from `STATE.md`, and that everything lives in `features/NN-name/`. If the app refuses the start (for example on a turn another session started), fall back to the card.
 2. **Text.** Always end with the cut's line too (`/home-office:resume NN-name`), so the hand-over works without the app (CLI, other clients) or if the card is refused.
 3. Add that this session can be archived once the new one is running (a card lives in this conversation).
 

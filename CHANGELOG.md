@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.0-pre.11 — 2026-10-20
+- **Streams**: parallel long-running lines of work inside one office, made of different features in sequence (e.g. building a new app next to ongoing audits). `<work>/streams/NN-name/stream.md` (new template) holds the goal, scope, roadmap (`planned / in progress / done`, linked to `features/NN-name`), shared decisions and status. Batches stay as they are (the same change across many repos).
+- New `/home-office:stream`: no args lists streams with roadmap progress; `new "<goal>"` has the architect draft the roadmap in a new `roadmap` mode (writes only `stream.md`) and waits for approval; `next <stream>` starts the next planned feature through the `new` flow.
+- `new` links a feature to a stream (`--stream <name>`, or named in the request): `Stream:` header line in `STATE.md` (new, after `Rework`), roadmap row `in progress`, stream's `stream.md` passed to the explorer and architect. `close` marks it `done` and offers the next one.
+- The board and `status` group rows by stream ("Other" for the rest) and show roadmap progress. Claude desktop app: a stream's sessions, hand-overs included, go to a sidebar group `<project> · <stream>`; titles stay `feat: NN-name`.
+- `init` creates `streams/`. Existing work folders: create `streams/` when you need it; older `STATE.md` files without the `Stream:` line count as no stream.
+
 ## 0.4.0-pre.10 — 2026-10-20
 - `copy` accepts folders (e.g. built assets git ignores, like `public/build`); before, `ho.py worktree` silently skipped anything that was not a file.
 - Per-repo `base` in `repos` overrides `base_branch` for that repo (worktrees, review, merges, `task`), for a repo whose base is `main` in a project whose base is `dev`.

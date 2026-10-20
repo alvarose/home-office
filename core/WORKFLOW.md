@@ -13,7 +13,7 @@ The cost of an agent grows with *number of calls × context size*. Short session
 
 ## Two pieces per project
 
-- **Work** (`docs/work/` in a compact project, a separate repo in a multi-repo project): the board, features, batches, log.
+- **Work** (`docs/work/` in a compact project, a separate repo in a multi-repo project): the board, features, streams, batches, log.
 - **Knowledge** (`docs/knowledge/` or one or more separate sources): short cards per repo, an `INDEX.md`, architecture, rules.
 
 ## Language
@@ -50,7 +50,7 @@ Whenever a step writes or updates a document, the conductor ends its message wit
 
 ## STATE.md
 
-Four header lines (status, last session, branches, rework count) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read.
+Header lines (status, last session, branches, rework count, stream) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read.
 
 ## Limits (defaults, configurable)
 
@@ -67,6 +67,16 @@ Four header lines (status, last session, branches, rework count) and four sectio
 - Base branch per project; `close` proposes merges in layer order; the user merges.
 - Shared packages (declared in config): with several features in flight, the first one ready publishes; the others update to that version before publishing theirs.
 - **Batches**: the same kind of change across many repos. Each repo is a feature; the solutions chosen per rule are recorded once in the batch's `DECISIONS.md` and reused.
+
+## Streams
+
+A **stream** is a long-running goal made of different features in sequence (example: "build the mobile app": scaffold, login, list screen…). Several streams run in parallel inside one office, next to ad-hoc features, sharing the project's config, repos, rules and knowledge. A batch is different: the same change across many repos. Both are kept.
+
+- `<work>/streams/NN-name/stream.md` (template `stream.md`): goal, scope (repos and roles), **roadmap** (ordered features, each about one session-cut of work, with status `planned` / `in progress` / `done` and a link to `features/NN-name`), shared decisions (or a `DECISIONS.md` beside it) and status.
+- Each feature of a stream has the header line `Stream: streams/NN-name` in its `STATE.md`. Features with no stream say `Stream: none`.
+- `/home-office:stream new "<goal>"` has the architect (mode `roadmap`) draft the roadmap; the user approves it before anything is written. `/home-office:stream next <stream>` starts the next planned feature through the usual `new` flow; the conductor marks it `in progress`, and gives the architect the stream's shared decisions as it does a batch's `DECISIONS.md`. `close` marks the feature `done` and offers the next one.
+- The board and `status` group features by stream (features with no stream under "Other") and show each stream's progress (done / total).
+- In the Claude desktop app a stream's sessions, hand-overs included, go to a sidebar group named `<project> · <stream>`. Session titles stay `feat: NN-name`.
 
 ## Guards (hooks)
 
