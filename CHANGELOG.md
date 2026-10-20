@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.12 — 2026-10-20
+- Numbered sessions: a feature's sessions are titled `feat: NN-name #n` in order. `new`'s session is #1 (renamed in the desktop app), and each `resume` session gets the next number from the title hook, kept per session in `features/NN-name/sessions.json` so re-running resume keeps it. The conductor names other sessions of the feature by that number.
+
 ## 0.4.0-pre.11 — 2026-10-20
 - **Streams**: parallel long-running lines of work inside one office, made of different features in sequence (e.g. building a new app next to ongoing audits). `<work>/streams/NN-name/stream.md` (new template) holds the goal, scope, roadmap (`planned / in progress / done`, linked to `features/NN-name`), shared decisions and status. Batches stay as they are (the same change across many repos).
 - New `/home-office:stream`: no args lists streams with roadmap progress; `new "<goal>"` has the architect draft the roadmap in a new `roadmap` mode (writes only `stream.md`) and waits for approval; `next <stream>` starts the next planned feature through the `new` flow.

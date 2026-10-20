@@ -2,8 +2,10 @@
 
 Acts only in sessions opened under a folder that has a `.home-office.yml`, and only on
 prompts that start a home-office command:
-  - `/home-office:resume NN[-name] [--tuning]` -> "feat: NN-name" (" · tuning" for --tuning),
-    with the full name taken from `<work>/features/`;
+  - `/home-office:resume NN[-name] [--tuning]` -> "feat: NN-name #n" (" · tuning" for --tuning),
+    with the full name taken from `<work>/features/` and n the session's number in that
+    feature: `new`'s session is #1, each resume session gets the next one (kept per session
+    id in `<work>/features/NN-name/sessions.json`, so re-running resume keeps the number);
   - `/home-office:new <request>`                -> "new: <request, shortened>";
   - `/home-office:task <request>`               -> "task: <request, shortened>".
 The conductor can refine the title later (e.g. "feat: NN-name" once `new` assigns NN).
@@ -11,6 +13,7 @@ The conductor can refine the title later (e.g. "feat: NN-name" once `new` assign
 It never blocks anything. Fail-open. `HOME_OFFICE_TITLE=0` disables it.
 """
 
+import json
 import os
 import re
 import sys
@@ -49,15 +52,37 @@ def feature_name(config_path: str, arg: str) -> str:
     return arg
 
 
+def session_number(config_path: str, feature: str, session_id: str):
+    """This session's number within the feature (#1 is the `new` session), or None."""
+    folder = os.path.join(work_dir(config_path), "features", feature)
+    if not session_id or not os.path.isdir(folder):
+        return None
+    path = os.path.join(folder, "sessions.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            numbers = json.load(fh)
+    except Exception:
+        numbers = {}
+    if session_id not in numbers:
+        numbers[session_id] = max([1] + [n for n in numbers.values() if isinstance(n, int)]) + 1
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(numbers, fh, indent=1)
+    return numbers[session_id]
+
+
 def shorten(text: str) -> str:
     text = " ".join(text.split())
     return text if len(text) <= MAX_LEN else text[:MAX_LEN - 1].rstrip() + "…"
 
 
-def title_for(prompt: str, config_path: str):
+def title_for(prompt: str, config_path: str, session_id: str = ""):
     m = RESUME_RE.match(prompt)
     if m:
-        title = "feat: " + feature_name(config_path, m.group(1))
+        feature = feature_name(config_path, m.group(1))
+        title = "feat: " + feature
+        n = session_number(config_path, feature, session_id)
+        if n:
+            title += f" #{n}"
         return title + (" · tuning" if "--tuning" in m.group(2) else "")
     m = NEW_RE.match(prompt)
     if m:
@@ -74,7 +99,7 @@ def main() -> None:
     config = find_up(data.get("cwd") or os.getcwd(), ".home-office.yml")
     if not config:
         return
-    title = title_for(data.get("prompt") or "", config)
+    title = title_for(data.get("prompt") or "", config, data.get("session_id") or "")
     if title:
         emit({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "sessionTitle": title}})
 
