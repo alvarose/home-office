@@ -50,7 +50,7 @@ Whenever a step writes or updates a document, the conductor ends its message wit
 
 ## STATE.md
 
-Header lines (status, last session, branches, rework count, stream) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read.
+Five header lines (status, last session, branches, rework count, stream) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read.
 
 ## Limits (defaults, configurable)
 

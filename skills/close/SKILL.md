@@ -13,7 +13,7 @@ Every git command you give the user (commit, merge, push, worktree removal, bran
 Write STATE, DECISIONS, board and log in the project's `language` (see "Language" in `${CLAUDE_PLUGIN_ROOT}/core/WORKFLOW.md`), keeping the templates' sections and their order.
 
 1. Identify the feature this session worked on (or the short-lane change). If a task is still open in any of its worktrees (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-status --worktree <wt>` → `active: true`), close it with `task-end` and record the result.
-2. **STATE.md**: rewrite it from the template. Four header lines (status, last session = today + role, branches, rework count) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. Be concrete in "Next": the exact TASK or step.
+2. **STATE.md**: rewrite it from the template. Five header lines (status, last session = today + role, branches, rework count, stream: keep the existing `Stream:` line) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. Be concrete in "Next": the exact TASK or step.
 3. **DECISIONS.md** of the feature: add the decisions taken in this session. If it belongs to a batch, add rule-level decisions to the batch's `DECISIONS.md` too.
 4. **Board**: update the feature's row (phase/gate, date, next step).
 5. **Commits** → gate 4: TASKs that passed their gate are usually committed on the feature branch already (`new` § Execute step 5). For any passed TASK still uncommitted, follow that step (`commit: ask|auto`). For anything else with changes, show `git -C <path> diff --stat` and propose a commit message; the user commits. Never merge or push yourself, and never commit on the base branch.
