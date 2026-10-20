@@ -14,11 +14,12 @@ sources:                      # knowledge sources, all optional (/home-office:so
 
 repos:                        # each repo: path, roles, checks (must pass to close a TASK),
                               # copy (untracked files a new worktree needs), setup (run once per new worktree)
-                              # and prepare (run before the checks of every TASK, e.g. code generators)
+                              # and prepare (run before the checks of every TASK, e.g. code generators);
+                              # copy takes files or folders; base overrides base_branch for one repo
   app: { path: ., roles: [backend, frontend], checks: [], copy: [], setup: [], prepare: [] }
 
 layers: [backend, frontend]   # execution order inside a feature
-base_branch: main
+base_branch: main             # default base for every repo; a repo can set its own `base`
 shared_packages: []           # repos published as a dependency of others
 worktrees: ../.worktrees      # where feature worktrees are created: <worktrees>/<repo>/<NN-name>
 

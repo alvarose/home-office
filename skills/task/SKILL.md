@@ -29,7 +29,7 @@ Follow `new` § 0 (`${CLAUDE_PLUGIN_ROOT}/skills/new/SKILL.md`): config in the c
 **Read-only check** (find, verify, report; nothing changes): launch `home-office:explorer` (`roles.explorer`) once for all the repos, or once per repo if there are many. Tell it this is a check, **not** a brief: it must not write any file, only return its findings per repo (result, evidence with paths, anything odd).
 
 **Mechanical change** (the same simple change in one or more repos), per repo:
-1. If the repo has uncommitted changes or is not on its `base_branch`, tell the user and ask before touching it.
+1. If the repo has uncommitted changes or is not on its base (its `base`, else `base_branch`), tell the user and ask before touching it.
 2. Open an open-scope task, as in the short lane: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-start --worktree <repo> --task "task: <name>" --deny "<glob>=<reason>"… [--prepare "<cmd>"]… --check "<cmd>"… --attempts <limits.task_attempts>`.
    - `--deny` comes from the `guards` that apply to the repo.
    - `--delete` is only for paths the request names, after confirming the list with the user.

@@ -58,10 +58,15 @@ def cmd_worktree(a) -> None:
     if created:
         for rel in a.copy or []:
             src, dst = os.path.join(repo, rel), os.path.join(dest, rel)
-            if os.path.isfile(src) and not os.path.exists(dst):
+            if os.path.exists(dst):
+                continue
+            if os.path.isfile(src):
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(src, dst)
                 copied.append(rel)
+            elif os.path.isdir(src):  # e.g. built assets git ignores
+                shutil.copytree(src, dst)
+                copied.append(rel + "/")
         for cmd in a.setup or []:
             ok, tail = run_check(cmd, dest, timeout=1800, tail=15)
             setup.append({"command": cmd, "ok": ok, **({} if ok else {"output": tail})})
@@ -152,7 +157,7 @@ def main() -> None:
     w.add_argument("--dest", required=True)
     w.add_argument("--branch", required=True)
     w.add_argument("--base", required=True)
-    w.add_argument("--copy", action="append", help="untracked file to copy from the repo, e.g. .env")
+    w.add_argument("--copy", action="append", help="untracked file or folder to copy from the repo, e.g. .env or public/build")
     w.add_argument("--setup", action="append", help="command to run once in a new worktree")
     w.set_defaults(fn=cmd_worktree)
 

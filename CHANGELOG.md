@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.10 — 2026-10-20
+- `copy` accepts folders (e.g. built assets git ignores, like `public/build`); before, `ho.py worktree` silently skipped anything that was not a file.
+- Per-repo `base` in `repos` overrides `base_branch` for that repo (worktrees, review, merges, `task`), for a repo whose base is `main` in a project whose base is `dev`.
+
 ## 0.4.0-pre.9 — 2026-10-19
 - New `/home-office:task "<job>"`: one self-contained check, cleanup or mechanical change, even across several repos, with no SPEC, PLAN or TASKs. Read-only checks go to the explorer, changes to one implementer per repo under the usual guards and checks. It reports a results table, logs one line and ends in the same session (archiving itself with `archive: auto`). Requests that need design are sent to `/home-office:new`.
 - Session titles: `/home-office:task <job>` sessions are titled `task: <job>`.
