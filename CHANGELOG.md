@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.17 — 2026-10-21
+- Sessions started by another session (hand-overs, cards) no longer nest under it in the desktop sidebar. The starting session detaches the session it starts, and `resume` detaches itself at the start; then the session goes to its project's group at the top level. As a side effect, archiving an old session never archives its successor.
+
 ## 0.4.0-pre.16 — 2026-10-21
 - Session titles for `/home-office:status`: `<work folder>: status`, or `<work folder>: status · <project>` with a project argument.
 - The title hook also understands slash commands in tag form (`<command-name>…</command-name>` with `<command-args>…</command-args>`), for `new`, `task`, `resume` and `status`.
