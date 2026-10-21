@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.16 — 2026-10-21
+- Session titles for `/home-office:status`: `<work folder>: status`, or `<work folder>: status · <project>` with a project argument.
+- The title hook also understands slash commands in tag form (`<command-name>…</command-name>` with `<command-args>…</command-args>`), for `new`, `task`, `resume` and `status`.
+
 ## 0.4.0-pre.15 — 2026-10-21
 - **Projects**: a logical grouping, one per repo (every key in `repos`). Nothing moves on disk: features keep `features/NN-name/` and global numbering; each piece of work records its project. A cross-repo feature belongs to the project that drives it and shows as "touches" in the others.
 - `STATE.md` has a sixth header line, `Project:` (after `Stream:`); `stream.md` has `Project:`; the short-lane log has a Project column. New optional page `projects/<repo>/project.md` (template `project.md`: what it is, backlog, shared decisions, tasks done), created lazily.

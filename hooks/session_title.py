@@ -7,7 +7,9 @@ prompts that start a home-office command:
     feature: `new`'s session is #1, each resume session gets the next one (kept per session
     id in `<work>/features/NN-name/sessions.json`, so re-running resume keeps the number);
   - `/home-office:new <request>`                -> "new: <request, shortened>";
-  - `/home-office:task <request>`               -> "task: <request, shortened>".
+  - `/home-office:task <request>`               -> "task: <request, shortened>";
+  - `/home-office:status [project]`             -> "<work folder>: status" (" · <project>"),
+    the work folder being the name of the folder that holds `.home-office.yml`.
 The conductor can refine the title later (e.g. "feat: NN-name" once `new` assigns NN).
 
 It never blocks anything. Fail-open. `HOME_OFFICE_TITLE=0` disables it.
@@ -25,6 +27,10 @@ from _common import emit, find_up, read_stdin_json  # noqa: E402
 # resume command may be on any line, not only the first.
 RESUME_RE = re.compile(r"^[ \t]*/home-office:resume[ \t]+(\S+)([^\n]*)$", re.MULTILINE)
 NEW_RE = re.compile(r"^\s*/home-office:(new|task)\s+(.+)$", re.DOTALL)
+STATUS_RE = re.compile(r"^\s*/home-office:status(?:[ \t]+(\S+))?[ \t]*$", re.MULTILINE)
+# Slash commands may arrive in tag form: <command-name>/x</command-name> <command-args>a</command-args>
+TAG_NAME_RE = re.compile(r"<command-name>\s*(/home-office:[\w-]+)\s*</command-name>")
+TAG_ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
 WORK_RE = re.compile(r"^\s*work\s*:\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
 MAX_LEN = 60
 
@@ -77,7 +83,21 @@ def shorten(text: str) -> str:
     return text if len(text) <= MAX_LEN else text[:MAX_LEN - 1].rstrip() + "…"
 
 
+def plain_command(prompt: str) -> str:
+    """Turn the tag form of a slash command back into `/home-office:x args`."""
+    name = TAG_NAME_RE.search(prompt)
+    if not name:
+        return prompt
+    args = TAG_ARGS_RE.search(prompt)
+    return name.group(1) + (" " + args.group(1).strip() if args and args.group(1).strip() else "")
+
+
 def title_for(prompt: str, config_path: str, session_id: str = ""):
+    prompt = plain_command(prompt)
+    m = STATUS_RE.match(prompt)
+    if m:
+        office = os.path.basename(os.path.dirname(os.path.abspath(config_path)))
+        return f"{office}: status" + (f" · {m.group(1)}" if m.group(1) else "")
     m = RESUME_RE.search(prompt)
     if m:
         feature = feature_name(config_path, m.group(1))
