@@ -1,6 +1,7 @@
 # NN-name · stream
 
 Goal: <the long-running goal this stream builds towards>
+Project: <repo key of the project this stream belongs to>
 
 ## Scope
 | Repo | Role |

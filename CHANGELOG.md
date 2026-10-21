@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.0-pre.15 — 2026-10-21
+- **Projects**: a logical grouping, one per repo (every key in `repos`). Nothing moves on disk: features keep `features/NN-name/` and global numbering; each piece of work records its project. A cross-repo feature belongs to the project that drives it and shows as "touches" in the others.
+- `STATE.md` has a sixth header line, `Project:` (after `Stream:`); `stream.md` has `Project:`; the short-lane log has a Project column. New optional page `projects/<repo>/project.md` (template `project.md`: what it is, backlog, shared decisions, tasks done), created lazily.
+- `new`, `task` and `stream new` accept `--project <repo>`; `new` defaults to the first repo the classifier lists and asks in one line if ambiguous.
+- `status [<repo>]` shows one project or groups by project, then stream; the board has one section per project with streams inside. New `/home-office:project`: list projects, show a page, `add "<idea>"` to the backlog.
+- Desktop app: one sidebar group per project, `<office> · <repo>`, replacing pre.11's per-stream group.
+- Migration: features without `Project:` count as the first repo of their `Branches` line, or "Other".
+
 ## 0.4.0-pre.14 — 2026-10-21
 - Numbered titles for hand-over sessions: their first message starts with the app's "Background…" block, so the title hook now finds `/home-office:resume NN` on any line, not only the first. Before, those sessions kept the card's title with no `#n`.
 - `resume` checks its own title in the desktop app and renames itself to `feat: NN-name #n` if the number is missing.

@@ -5,6 +5,7 @@ Last session: <date>, <agent>
 Branches: feature/NN-name in <repos>
 Rework: 0
 Stream: <streams/NN-name, or "none">
+Project: <repo key of the project that drives it>
 
 ## Done
 

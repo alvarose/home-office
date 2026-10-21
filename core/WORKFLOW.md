@@ -50,7 +50,7 @@ Whenever a step writes or updates a document, the conductor ends its message wit
 
 ## STATE.md
 
-Five header lines (status, last session, branches, rework count, stream) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read.
+Six header lines (status, last session, branches, rework count, stream, project) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read.
 
 ## Limits (defaults, configurable)
 
@@ -72,11 +72,23 @@ Five header lines (status, last session, branches, rework count, stream) and fou
 
 A **stream** is a long-running goal made of different features in sequence (example: "build the mobile app": scaffold, login, list screen…). Several streams run in parallel inside one office, next to ad-hoc features, sharing the project's config, repos, rules and knowledge. A batch is different: the same change across many repos. Both are kept.
 
-- `<work>/streams/NN-name/stream.md` (template `stream.md`): goal, scope (repos and roles), **roadmap** (ordered features, each about one session-cut of work, with status `planned` / `in progress` / `done` and a link to `features/NN-name`), shared decisions (or a `DECISIONS.md` beside it) and status.
+- `<work>/streams/NN-name/stream.md` (template `stream.md`): goal, project, scope (repos and roles), **roadmap** (ordered features, each about one session-cut of work, with status `planned` / `in progress` / `done` and a link to `features/NN-name`), shared decisions (or a `DECISIONS.md` beside it) and status.
 - Each feature of a stream has the header line `Stream: streams/NN-name` in its `STATE.md`. Features with no stream say `Stream: none`.
 - `/home-office:stream new "<goal>"` has the architect (mode `roadmap`) draft the roadmap; the user approves it before anything is written. `/home-office:stream next <stream>` starts the next planned feature through the usual `new` flow; the conductor marks it `in progress`, and gives the architect the stream's shared decisions as it does a batch's `DECISIONS.md`. `close` marks the feature `done` and offers the next one.
-- The board and `status` group features by stream (features with no stream under "Other") and show each stream's progress (done / total).
-- In the Claude desktop app a stream's sessions, hand-overs included, go to a sidebar group named `<project> · <stream>`. Session titles stay `feat: NN-name`.
+- The board and `status` group features by project, then by stream inside it (features with no stream under "Other"), and show each stream's progress (done / total).
+- In the Claude desktop app a stream's sessions, hand-overs included, go to its project's sidebar group (see Projects). Session titles stay `feat: NN-name`.
+
+## Projects
+
+A **project** is a logical grouping, one per repo: every repo in `repos` is a project, named by its repo key. Nothing moves on disk: features stay in `<work>/features/NN-name/` with global numbering, tasks and streams keep their places. Each piece of work only says which project it belongs to, and every view can be filtered or grouped by project.
+
+- Hierarchy: **project** (per repo, ongoing) > **stream** (a goal with an end, inside a project) > **feature** / **task**. Batches stay cross-project.
+- A feature has `Project: <repo>` in its `STATE.md`; a stream has it in `stream.md`; log lines and task lines record it. A cross-repo feature belongs to the project that **drives** it and also shows in the other projects it touches (board rows marked "touches").
+- Optional page `<work>/projects/<repo>/project.md` (template `project.md`): what the project is, backlog, shared decisions, short log of tasks done. Created lazily, the first time something is filed under the project or with `/home-office:project <repo>`.
+- `new --project <repo>`, `task --project <repo>` and `stream new --project <repo>` assign it; without the flag `new` takes the repo the classifier lists first and asks in one line if that is ambiguous.
+- `/home-office:status <repo>` shows one project; without an argument it groups by project, then by stream. The board has one section per project with streams inside. `/home-office:project` lists projects, shows a page or adds a backlog line.
+- Claude desktop app: one sidebar group per project, named `<office> · <repo>` (office = work folder name without `-work`); feature, hand-over and stream sessions go to their project's group.
+- **Migration**: features without a `Project:` line count as the first repo of their `Branches` line, or "Other" if none. Nothing needs rewriting; `close` adds the line when it next rewrites `STATE.md`.
 
 ## Guards (hooks)
 
