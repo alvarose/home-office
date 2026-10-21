@@ -8,7 +8,9 @@ are never affected.
 Inside an active task it denies:
   - any path matching a `deny` rule (project hard rules, e.g. migrations outside one repo);
   - any path outside the TASK's closed file list (`files` / `allow`), when the task has one;
-  - Bash/PowerShell commands aimed at that worktree that write files (redirections, tee,
+  - Bash/PowerShell commands aimed at that worktree that write files (redirections into the
+    worktree — output redirected to $TEMP, /tmp or any path outside it is fine —, inline
+    scripts that write files, tee,
     sed -i, rm/mv/cp…) or change git state: file changes must go through Edit/Write.
     The one exception is deleting files or folders in the TASK's delete list (`delete`) by
     exact path with `rm`, `unlink`, `git rm` or `Remove-Item`.
@@ -40,7 +42,6 @@ def deny(reason: str) -> None:
 PATH_TOKEN = re.compile(r"""(?:[A-Za-z]:[\\/]|/)[^\s'"`;|&<>()]+""")
 SAFE_REDIRECTS = re.compile(r"\d?>&\d|&>\s*/dev/null|\d?>{1,2}\s*/dev/null|\d?>{1,2}\s*NUL\b|>\s*\$null")
 WRITE_PATTERNS = [
-    (re.compile(r">"), "output redirection"),
     (re.compile(r"(^|[\s;|&(])tee\s"), "tee"),
     (re.compile(r"(^|[\s;|&(])(sed|perl)\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*i"), "in-place edit"),
     (re.compile(r"(^|[\s;|&(])(rm|mv|cp|touch|truncate|dd|install|ln|mkdir|rmdir|unlink)\s"), "file command"),
@@ -49,6 +50,47 @@ WRITE_PATTERNS = [
     (re.compile(r"git\s+(-C\s+\S+\s+)?(add|commit|push|checkout|switch|restore|reset|stash|rebase|merge|"
                 r"clean|cherry-pick|revert|apply|am|rm|mv)\b"), "git write command"),
 ]
+
+
+# Inline scripts (heredocs, -c / -r / -e) that write files: they bypass Edit/Write.
+SCRIPT_WRITE = re.compile(
+    r"""open\([^)]*['"][wax]b?\+?['"]|\.write_(text|bytes)\(|shutil\.(copy|move)|os\.(remove|rename|replace)\("""
+    r"""|file_put_contents\s*\(|fopen\([^)]*['"][wax]|fs\.(writeFile|appendFile|rm|unlink)(Sync)?\("""
+    r"""|\bSet-Content\b|\bOut-File\b""")
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\s*(\n|$)", re.DOTALL)
+QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
+REDIRECT = re.compile(r"(?<![-=<>])(\d?&?>{1,2})(?![=&])\s*([^\s;|&<>()]+)?")
+TEMP_VARS = re.compile(r"^(\$\{?(TEMP|TMP|TMPDIR)\}?|%(TEMP|TMP)%|\$env:(TEMP|TMP))(?=[\\/]|$)", re.IGNORECASE)
+
+
+def redirect_target_inside(target: str, base: str, wt: str):
+    """True if a redirection target is in the worktree (or cannot be resolved), else False."""
+    if not target:
+        return True
+    target = target.strip("'\"")
+    if TEMP_VARS.match(target):
+        return False  # $TEMP, $TMP, %TEMP%…: never inside a worktree
+    if target.startswith("~"):
+        target = os.path.expanduser(target)
+    if "$" in target or "%" in target or "`" in target:
+        return True  # an unknown variable: be safe
+    if target in ("/tmp",) or target.startswith("/tmp/"):
+        return False
+    path = os.path.normcase(os.path.abspath(resolve(target, base)))
+    root = os.path.normcase(os.path.abspath(wt))
+    return path == root or path.startswith(root.rstrip("\\/") + os.sep)
+
+
+def redirect_problem(segment: str, base: str, wt: str) -> bool:
+    """True if the segment redirects output into the worktree (or somewhere unknown)."""
+    # Mask quoted text (same length) so a `>` inside quotes is not a redirection, but read the
+    # target from the original, so a quoted target path is kept whole.
+    masked = QUOTED.sub(lambda q: "Q" * len(q.group()), segment)
+    for m in REDIRECT.finditer(masked):
+        target = segment[m.start(2):m.end(2)] if m.group(2) else ""
+        if redirect_target_inside(target, base, wt):
+            return True
+    return False
 
 
 def to_local(token: str) -> str:
@@ -198,7 +240,12 @@ def check_bash(data: dict) -> None:
         return
     task = scope.get("task") or "a TASK"
     base = data.get("cwd") or wt
-    stripped = SAFE_REDIRECTS.sub(" ", command)
+    if SCRIPT_WRITE.search(command):
+        deny(f"home-office: during {task} Bash may only read and run commands/checks (a script "
+             f"that writes files detected). Make file changes with the Edit or Write tools, which "
+             f"are scope-checked. Never commit, stage or switch branches.")
+        return
+    stripped = SAFE_REDIRECTS.sub(" ", HEREDOC.sub("\n", command))
     for segment in SEGMENT_SPLIT.split(stripped):
         segment = segment.strip()
         if not segment:
@@ -214,13 +261,17 @@ def check_bash(data: dict) -> None:
         if verdict:
             deny(verdict)
             return
-        for pattern, label in WRITE_PATTERNS:
-            if pattern.search(segment):
-                deny(f"home-office: during {task} Bash may only read and run commands/checks "
-                     f"({label} detected). Make file changes with the Edit or Write tools, which "
-                     f"are scope-checked. Files in the TASK's delete list may be removed with "
-                     f"`rm <path>` or `git rm <path>`. Never commit, stage or switch branches.")
-                return
+        hits = [label for pattern, label in WRITE_PATTERNS if pattern.search(segment)]
+        if redirect_problem(segment, base, wt):
+            hits.insert(0, "output redirection into the worktree")
+        if hits:
+            deny(f"home-office: during {task} Bash may only read and run commands/checks "
+                 f"({hits[0]} detected). Make file changes with the Edit or Write tools, which "
+                 f"are scope-checked. To keep command output, redirect it to a file outside the "
+                 f"worktree (e.g. `> \"$TEMP/out.log\"`). Files in the TASK's delete list may be "
+                 f"removed with `rm <path>` or `git rm <path>`. Never commit, stage or switch "
+                 f"branches.")
+            return
 
 
 def main() -> None:

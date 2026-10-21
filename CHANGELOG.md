@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.4.0-pre.18 — 2026-10-22
+- Scope guard, fewer false alarms: output redirected to a file **outside** the worktree (`> /tmp/x.log`, `> "$TEMP/out.txt"`, any absolute path elsewhere) is allowed during a TASK, and `->`, `=>` or `>` inside quotes (e.g. `grep "->where("`) no longer count as redirections. Redirections into the worktree, or to a path it cannot resolve, are still blocked.
+- Inline scripts that write files (heredocs or `-c`/`-r` with `open(…, 'w')`, `write_text`, `file_put_contents`, `fs.writeFile`…) are now blocked on purpose, with a clear message; before they were only caught by chance.
+- The block message suggests redirecting output to `$TEMP` instead.
+
 ## 0.4.0-pre.17 — 2026-10-21
 - Sessions started by another session (hand-overs, cards) no longer nest under it in the desktop sidebar. The starting session detaches the session it starts, and `resume` detaches itself at the start; then the session goes to its project's group at the top level. As a side effect, archiving an old session never archives its successor.
 
