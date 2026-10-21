@@ -21,7 +21,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import emit, find_up, read_stdin_json  # noqa: E402
 
-RESUME_RE = re.compile(r"^\s*/home-office:resume\s+(\S+)(.*)$", re.DOTALL)
+# A hand-over session's first message starts with a "Background…" block from the app, so the
+# resume command may be on any line, not only the first.
+RESUME_RE = re.compile(r"^[ \t]*/home-office:resume[ \t]+(\S+)([^\n]*)$", re.MULTILINE)
 NEW_RE = re.compile(r"^\s*/home-office:(new|task)\s+(.+)$", re.DOTALL)
 WORK_RE = re.compile(r"^\s*work\s*:\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
 MAX_LEN = 60
@@ -76,7 +78,7 @@ def shorten(text: str) -> str:
 
 
 def title_for(prompt: str, config_path: str, session_id: str = ""):
-    m = RESUME_RE.match(prompt)
+    m = RESUME_RE.search(prompt)
     if m:
         feature = feature_name(config_path, m.group(1))
         title = "feat: " + feature

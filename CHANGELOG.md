@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.14 — 2026-10-21
+- Numbered titles for hand-over sessions: their first message starts with the app's "Background…" block, so the title hook now finds `/home-office:resume NN` on any line, not only the first. Before, those sessions kept the card's title with no `#n`.
+- `resume` checks its own title in the desktop app and renames itself to `feat: NN-name #n` if the number is missing.
+
 ## 0.4.0-pre.13 — 2026-10-21
 - `/home-office:status` ends with the next commands to run, in order: what waits for the user (blocked items, pushes and merges as `git -C` commands), `resume` for features ready to continue, `close` for features ready to close, `stream next` for streams with nothing in progress. In the desktop app it also offers the first one as a session card.
 

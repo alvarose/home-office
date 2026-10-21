@@ -1,6 +1,6 @@
 ---
 name: resume
-description: Resume a home-office feature in a fresh session from its STATE.md. Use only when the user invokes /home-office:resume, or when the session's first message is exactly `/home-office:resume NN-name` (a hand-over started by the previous session). Never reopens an old conversation.
+description: Resume a home-office feature in a fresh session from its STATE.md. Use only when the user invokes /home-office:resume, or when the session's first message has a line `/home-office:resume NN-name` (a hand-over started by the previous session; the app puts a background block before it). Never reopens an old conversation.
 argument-hint: "[NN or NN-name] [--tuning]"
 ---
 
@@ -12,6 +12,7 @@ You continue a feature as its **conductor** (or, with `--tuning`, as the interac
 2. Pick the feature: the argument ($ARGUMENTS) (`NN` or `NN-name`); without it, read the board and ask which one (list the ones in flight).
 3. Read **only** `features/NN-name/STATE.md` (it may be in another language: find each section by its position in the template). Read `TASKS.md` only if the status is "executing", and only the next TASK. Never read the SPEC, PLAN or brief in full: subagents read them by path; if a step needs one detail, read only that section.
 4. Tell the user in three lines where it stands: status, next step, anything blocked; then one line of links to `STATE.md` and the feature's documents that exist (brief, SPEC, PLAN, TASKS, REVIEW), as in `new` § "Links to documents".
+   **Session title** (desktop app only). The title hook names this session `feat: NN-name #n` and records `n` in `features/NN-name/sessions.json`. If this session's title (`mcp__ccd_session_mgmt__get_session` with "self") has no `#n`, rename it with `mcp__ccd_session_mgmt__set_session_title` ("self") to `feat: NN-name #<highest number in sessions.json>` (or `#2` if the file is missing), adding ` · tuning` in tuning mode.
    **Archive the previous session** (not in `--tuning`; desktop app only). If `mcp__ccd_session_mgmt__get_session` with `session_id: "self"` shows a `parentSessionId`, get the parent: when its title is `feat: NN-name` of this same feature (or it handed over from this feature) and it is idle, archive it with `mcp__ccd_session_mgmt__archive_session` and a reason like "replaced by the next session of NN-name". With `archive: ask` ask the user once first, in one line; with `auto` just do it (the app may still ask for approval). Archiving a session also archives its finished, idle side sessions, so first list the parent's children (`list_sessions`): archive only if this session is its only child still alive; if another idle child is still in use, skip it, or detach this session first (`mcp__ccd_session_mgmt__detach_session`) if that makes it safe. Without these tools (CLI), skip this.
    **Sidebar group** (desktop app): if `STATE.md` has `Stream: streams/NN-name`, move this session into that stream's group (`stream` § "Sidebar group").
 5. Continue from "Next" following the `new` procedure from that point (execution, review or close). Gates still apply.
