@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.13 — 2026-10-21
+- `/home-office:status` ends with the next commands to run, in order: what waits for the user (blocked items, pushes and merges as `git -C` commands), `resume` for features ready to continue, `close` for features ready to close, `stream next` for streams with nothing in progress. In the desktop app it also offers the first one as a session card.
+
 ## 0.4.0-pre.12 — 2026-10-20
 - Numbered sessions: a feature's sessions are titled `feat: NN-name #n` in order. `new`'s session is #1 (renamed in the desktop app), and each `resume` session gets the next number from the title hook, kept per session in `features/NN-name/sessions.json` so re-running resume keeps it. The conductor names other sessions of the feature by that number.
 
