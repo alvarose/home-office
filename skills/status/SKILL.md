@@ -21,6 +21,6 @@ The argument is a project (a repo key from `repos`; a unique part of the name is
    2. **Ready to continue**: `/home-office:resume NN-name` for each feature in flight that is not blocked, most recently active first.
    3. **Ready to close**: `/home-office:close` (in a `resume` session of that feature) for features whose review (gate 3) is accepted.
    4. **Ready to start**: `/home-office:stream next <stream>` for streams with no feature in progress and a planned row; the next repo of an open batch.
-   With a project argument, only commands for that project's work. At most ~8 lines; if there are more, keep the order and say how many were left out. In the Claude desktop app, also offer once to start the first "ready to continue" one as a new session (`mcp__ccd_session__start_session`, `initiation: "own_initiative"`, the same fields as `new` § "Handing over"): a card, nothing runs until the user starts it.
+   With a project argument, only commands for that project's work. At most ~8 lines; if there are more, keep the order and say how many were left out. In the Claude desktop app, also offer once to start the first "ready to continue" one as a new session (`mcp__ccd_session__start_session`, `initiation: "own_initiative"`, the same fields as `new` § "Handing over"): a card, nothing runs until the user starts it. It is the only offer: no extra question or button about it (`new` § "Handing over" step 4).
 
 Read nothing else. Suggest only these next commands, never new work.

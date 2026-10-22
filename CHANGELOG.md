@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.4.0-pre.22 — 2026-10-22
+- One offer per hand-over: the card is the only place the next session is offered, with no extra "start it?" question or button in the app's next-step box. If the user says to start it, the conductor starts the existing card by its `proposal_id` instead of proposing a new one. Before, a planned cut showed two offers for the same session.
+
 ## 0.4.0-pre.21 — 2026-10-22
 - Archiving no longer gives up silently when the desktop app's auto-mode permission check refuses it (it wants the user's explicit OK per session). The session asks once in chat, naming the sessions, and archives on a yes; otherwise it lists them for the sidebar. New `project` § "Archiving sessions", used by `resume`, `close` and `task`.
 - `init`, with `archive: auto`, offers to allow `mcp__ccd_session_mgmt__archive_session` in the work folder's `.claude/settings.json`.
