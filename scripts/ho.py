@@ -1,6 +1,8 @@
 """home-office helper for the conductor. Deterministic steps, so the model does not improvise them.
 
   worktree    create (or reuse) a feature worktree and prepare it
+  worktree-remove  remove a feature worktree after the merge (refuses with an open TASK or
+              uncommitted changes) and, with --delete-branch, its branch if merged into --base
   task-start  open a TASK in a worktree: closed file list, delete list, deny rules,
               prepare commands, checks, baseline
   task-status show the active TASK of a worktree
@@ -31,8 +33,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
-from _common import (evaluate_task, git, last_context_tokens, load_scope,  # noqa: E402
-                     run_check, save_scope, scope_path, snapshot)
+from _common import (changed_files, evaluate_task, git, last_context_tokens,  # noqa: E402
+                     load_scope, run_check, save_scope, scope_path, snapshot)
 
 
 def out(obj: dict, code: int = 0) -> None:
@@ -148,6 +150,60 @@ def cmd_context(a) -> None:
     out({"ok": True, "tokens": last_context_tokens(a.transcript)})
 
 
+def cmd_worktree_remove(a) -> None:
+    """Remove a feature worktree (and, if asked, its merged branch), with safety checks."""
+    repo, dest = os.path.abspath(a.repo), os.path.abspath(a.dest)
+    norm = lambda p: os.path.normcase(os.path.normpath(p))  # noqa: E731
+    listed = git(repo, "worktree", "list", "--porcelain").stdout
+    paths = [norm(line[9:].strip()) for line in listed.splitlines() if line.startswith("worktree ")]
+    present = os.path.exists(dest)
+    if present and norm(dest) not in paths:
+        out({"ok": False, "error": f"{dest} is not a worktree of {repo}"}, 1)
+    if norm(dest) == norm(repo):
+        out({"ok": False, "error": "refusing to remove the repo's main checkout"}, 1)
+
+    branch = a.branch
+    if present:
+        if os.path.exists(scope_path(dest) or ""):
+            out({"ok": False, "error": "a TASK is still open in this worktree; close it with task-end first"}, 1)
+        dirty = changed_files(dest)
+        if dirty:
+            out({"ok": False, "error": "uncommitted changes in the worktree; commit or discard them first",
+                 "changes": dirty[:30]}, 1)
+        if not branch:
+            branch = git(dest, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or None
+
+    if a.delete_branch:
+        if not branch:
+            out({"ok": False, "error": "--delete-branch needs --branch (the worktree is gone)"}, 1)
+        if not a.base:
+            out({"ok": False, "error": "--delete-branch needs --base to check the branch is merged"}, 1)
+        merged = git(repo, "merge-base", "--is-ancestor", branch, a.base).returncode == 0
+        if not merged:
+            out({"ok": False, "error": f"{branch} is not merged into {a.base}; nothing was removed"}, 1)
+
+    removed = False
+    if present:
+        res = git(repo, "worktree", "remove", dest)
+        if res.returncode != 0 and a.force:
+            # Only reached with a clean status: what is left is ignored files or submodules.
+            res = git(repo, "worktree", "remove", "--force", dest)
+        if res.returncode != 0:
+            out({"ok": False, "error": (res.stderr or res.stdout).strip(),
+                 "hint": "if only ignored files or submodules are left, retry with --force"}, 1)
+        removed = True
+    git(repo, "worktree", "prune")
+
+    branch_deleted = False
+    if a.delete_branch:
+        res = git(repo, "branch", "-d", branch)  # -d refuses unmerged branches; never -D
+        if res.returncode != 0:
+            out({"ok": False, "worktree_removed": removed, "error": (res.stderr or res.stdout).strip()}, 1)
+        branch_deleted = True
+    out({"ok": True, "worktree": dest, "worktree_removed": removed, "branch": branch,
+         "branch_deleted": branch_deleted})
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="ho.py", description="home-office conductor helper")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -160,6 +216,17 @@ def main() -> None:
     w.add_argument("--copy", action="append", help="untracked file or folder to copy from the repo, e.g. .env or public/build")
     w.add_argument("--setup", action="append", help="command to run once in a new worktree")
     w.set_defaults(fn=cmd_worktree)
+
+    r = sub.add_parser("worktree-remove")
+    r.add_argument("--repo", required=True)
+    r.add_argument("--dest", required=True)
+    r.add_argument("--branch", help="defaults to the worktree's branch")
+    r.add_argument("--base", help="the repo's base branch; required with --delete-branch")
+    r.add_argument("--delete-branch", action="store_true",
+                   help="also delete the branch with git branch -d (only if merged into --base)")
+    r.add_argument("--force", action="store_true",
+                   help="only for ignored files or submodules left behind; never with uncommitted changes")
+    r.set_defaults(fn=cmd_worktree_remove)
 
     s = sub.add_parser("task-start")
     s.add_argument("--worktree", required=True)

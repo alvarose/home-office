@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.20 — 2026-10-22
+- New `ho.py worktree-remove --repo --dest [--branch] [--base] [--delete-branch] [--force]`, the inverse of `worktree`. It refuses while a TASK is open in the worktree, with uncommitted changes (even with `--force`), on the repo's main checkout, and, with `--delete-branch`, when the branch is not merged into `--base`; then nothing is removed. Branches go with `git branch -d`, never `-D`. `--force` only covers what a clean status leaves behind (submodules). JSON output like the other subcommands.
+- `close` removes worktrees and branches with it after the user confirms the merges, instead of git by hand.
+
 ## 0.4.0-pre.19 — 2026-10-22
 - Side sessions for parallel work next to a feature (follow-ups, side jobs) begin with a home-office command (`/home-office:task --project <repo> "…"` or `/home-office:new --project <repo> "…"`), so they run the plugin and get a clear title. They stay nested under the session that started them on purpose; only hand-overs go to the top level.
 - `new` and `task` can run when a session's first message has that command line (no more `disable-model-invocation`), like `resume`.
