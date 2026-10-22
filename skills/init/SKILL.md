@@ -36,7 +36,7 @@ Ask for:
 - **risk zones** that trigger the deep review;
 - **hard rules** that must never be broken, in words; and, for those that are about paths, the enforceable **guards** (`deny` glob, `except` repos, `reason`) that the hooks will apply;
 - **handover**: at a planned cut, should the next session be proposed as a card (`card`, default) or started automatically when nothing waits for the user (`auto`)? Only matters in the Claude desktop app.
-- **archive**: should finished sessions (the previous session after a hand-over, the feature's sessions once it is done) be archived after asking once (`ask`, default) or without asking (`auto`)? Only matters in the Claude desktop app.
+- **archive**: should finished sessions (the previous session after a hand-over, the feature's sessions once it is done) be archived after asking once (`ask`, default) or without asking (`auto`)? Only matters in the Claude desktop app. With `auto`, offer to add `"permissions": {"allow": ["mcp__ccd_session_mgmt__archive_session"]}` to the work folder's `.claude/settings.json`, so the desktop app's auto-mode check does not refuse it.
 - **commit**: should each TASK that passes its gate be committed on the feature branch after one question per session (`ask`, default) or right away (`auto`)? Merges to the base branch and pushes always stay with the user.
 Everything is optional.
 

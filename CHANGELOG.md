@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.21 — 2026-10-22
+- Archiving no longer gives up silently when the desktop app's auto-mode permission check refuses it (it wants the user's explicit OK per session). The session asks once in chat, naming the sessions, and archives on a yes; otherwise it lists them for the sidebar. New `project` § "Archiving sessions", used by `resume`, `close` and `task`.
+- `init`, with `archive: auto`, offers to allow `mcp__ccd_session_mgmt__archive_session` in the work folder's `.claude/settings.json`.
+
 ## 0.4.0-pre.20 — 2026-10-22
 - New `ho.py worktree-remove --repo --dest [--branch] [--base] [--delete-branch] [--force]`, the inverse of `worktree`. It refuses while a TASK is open in the worktree, with uncommitted changes (even with `--force`), on the repo's main checkout, and, with `--delete-branch`, when the branch is not merged into `--base`; then nothing is removed. Branches go with `git branch -d`, never `-D`. `--force` only covers what a clean status leaves behind (submodules). JSON output like the other subcommands.
 - `close` removes worktrees and branches with it after the user confirms the merges, instead of git by hand.

@@ -35,3 +35,11 @@ Claude desktop app only. If `mcp__ccd_sidebar__create_group` and `mcp__ccd_sideb
 - Move this session into it (`session_id: "self"`) when it works on a feature, task or stream of that project — **unless it is a side session nested under another one** (it has a `parentSessionId` and is not a hand-over of the same feature): leave it nested —, and, in the same way, any session of the project's features you start (hand-over sessions: `new` § "Handing over"; `resume`). Stream sessions use their project's group.
 - **Hand-overs at the top level.** A session that continues a feature after a planned cut (a hand-over, started or from a card the user clicked) is nested under the previous one in the sidebar; it should not be. Detach it first, then move it: the new session detaches itself with `mcp__ccd_session_mgmt__detach_session` (`session_id: "self"`; `resume` does this at the start), and a session that starts another with `start_session` detaches it right away (its id from the result). Detaching also means archiving the old session can never archive the new one. If the app refuses (e.g. the user moved it by hand), leave it as it is. Sessions started for parallel work next to a feature (side jobs) are the opposite: they stay nested under the session that started them.
 - Without these tools (CLI), skip it. A failure here never blocks the work: say it in one line.
+
+## Archiving sessions
+
+`resume`, `close` and `task` archive finished sessions (`archive: ask | auto`). In the Claude desktop app's auto mode, a permission check may refuse `mcp__ccd_session_mgmt__archive_session` even with `archive: auto`, because it wants the user's explicit OK for that session. When a call is refused:
+1. Ask the user once in chat, naming the sessions by title (e.g. "Archive `feat: NN-name #3` and `#4`?"). Their yes is that explicit OK; then archive them.
+2. If it is refused again, or the user says no, list the titles so the user can archive them from the sidebar, and go on. Never retry in a loop.
+
+To skip the question for good, the user can allow the tool in the work folder's `.claude/settings.json` (`"permissions": {"allow": ["mcp__ccd_session_mgmt__archive_session"]}`); offer it once if archiving keeps being refused.
