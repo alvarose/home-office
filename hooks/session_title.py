@@ -26,7 +26,8 @@ from _common import emit, find_up, read_stdin_json  # noqa: E402
 # A hand-over session's first message starts with a "Background…" block from the app, so the
 # resume command may be on any line, not only the first.
 RESUME_RE = re.compile(r"^[ \t]*/home-office:resume[ \t]+(\S+)([^\n]*)$", re.MULTILINE)
-NEW_RE = re.compile(r"^\s*/home-office:(new|task)\s+(.+)$", re.DOTALL)
+NEW_RE = re.compile(r"^[ \t]*/home-office:(new|task)[ \t]+([^\n]+)$", re.MULTILINE)
+FLAG_RE = re.compile(r"--(project|stream)[ \t]+\S+")
 STATUS_RE = re.compile(r"^\s*/home-office:status(?:[ \t]+(\S+))?[ \t]*$", re.MULTILINE)
 # Slash commands may arrive in tag form: <command-name>/x</command-name> <command-args>a</command-args>
 TAG_NAME_RE = re.compile(r"<command-name>\s*(/home-office:[\w-]+)\s*</command-name>")
@@ -106,9 +107,9 @@ def title_for(prompt: str, config_path: str, session_id: str = ""):
         if n:
             title += f" #{n}"
         return title + (" · tuning" if "--tuning" in m.group(2) else "")
-    m = NEW_RE.match(prompt)
+    m = NEW_RE.search(prompt)
     if m:
-        return m.group(1) + ": " + shorten(m.group(2).strip().strip("\"'"))
+        return m.group(1) + ": " + shorten(FLAG_RE.sub("", m.group(2)).strip().strip("\"'"))
     return None
 
 

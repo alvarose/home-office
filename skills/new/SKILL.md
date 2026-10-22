@@ -1,8 +1,7 @@
 ---
 name: new
-description: Start new work with home-office. Classifies the request into the short lane or the feature lane and, for features, runs explore → SPEC (gate 1) → PLAN + TASKS (gate 2) → execution → review (gate 3) → close. Use only when the user invokes /home-office:new.
+description: Start new work with home-office. Classifies the request into the short lane or the feature lane and, for features, runs explore → SPEC (gate 1) → PLAN + TASKS (gate 2) → execution → review (gate 3) → close. Use only when the user invokes /home-office:new, or when the session's first message has a line `/home-office:new …` (a session another home-office session started for it).
 argument-hint: "<what you want to do> [--stream <name>] [--project <repo>]"
-disable-model-invocation: true
 ---
 
 # /home-office:new
@@ -22,6 +21,9 @@ If it is empty, ask what the user wants to do and stop.
 3. The conductor should run on a cheap model (`roles.conductor`). If this session is on a top-tier model, suggest `/model <roles.conductor.model>` once and continue (in the Claude desktop app, choosing it in the model picker also works for later sessions). If `.claude/settings.json` next to the config has no `model`, offer once to add `"model": "<roles.conductor.model>"`: terminal CLI sessions opened here then start on it; the desktop app's picker ignores it (see `init` § 7).
 4. Read the board (`<work>/<board>`). If the number of features in flight reaches `limits.parallel_warning`, warn the user once.
 5. **Language.** Every document you or a subagent writes (STATE, DECISIONS, brief, SPEC, PLAN, TASKS, board, log) is written in `language` (if missing: the language the user writes in), following "Language" in `${CLAUDE_PLUGIN_ROOT}/core/WORKFLOW.md`. Pass `language` to every subagent that writes a document or findings (explorer, architect, reviewer, deep-reviewer). Talk to the user in the language they write in.
+
+6. **Top level** (Claude desktop app). If `mcp__ccd_session_mgmt__get_session` with "self" shows a `parentSessionId` and the session is not `detached`, detach it (`mcp__ccd_session_mgmt__detach_session`, "self"), so it sits at the top level, not under the session that started it. Move it into its project's sidebar group as soon as the project is known (`project` § "Sidebar group").
+7. **Sessions you start for other work** (a follow-up, a side job, anything outside this feature): the first line of their prompt is a home-office command, so they run the plugin and file themselves: `/home-office:task --project <repo> "<job>"` for a one-off job, `/home-office:new --project <repo> "<request>"` for real work. Use `use_worktree: false`, the conductor's model, and a `title` like `task: <job>`. If you started it (not a card), detach it right away with its id.
 
 ## 1. Classify
 

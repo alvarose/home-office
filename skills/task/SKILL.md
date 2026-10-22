@@ -1,8 +1,7 @@
 ---
 name: task
-description: Run one self-contained job with home-office - a check, a cleanup or a mechanical change, even across several repos - with no SPEC, PLAN or TASKs, then finish. Use only when the user invokes /home-office:task.
+description: Run one self-contained job with home-office - a check, a cleanup or a mechanical change, even across several repos - with no SPEC, PLAN or TASKs, then finish. Use only when the user invokes /home-office:task, or when the session's first message has a line `/home-office:task …` (a session another home-office session started for it).
 argument-hint: "<what to check or do, e.g. 'check that every repo removed its old vendored copy of X'> [--project <repo>]"
-disable-model-invocation: true
 ---
 
 # /home-office:task

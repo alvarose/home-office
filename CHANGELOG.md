@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.4.0-pre.19 — 2026-10-22
+- No more nested sessions in the desktop sidebar for any session a home-office session starts, not only hand-overs. `new`, `task` and `stream` (via `new` § 0) detach themselves when they have a parent and move into their project's group.
+- Sessions started for other work (follow-ups, side jobs) begin with a home-office command (`/home-office:task --project <repo> "…"` or `/home-office:new --project <repo> "…"`), so they file themselves.
+- `new` and `task` can run when a session's first message has that command line (no more `disable-model-invocation`), like `resume`.
+- The title hook finds `new`/`task` on any line too, and leaves `--project`/`--stream` out of the title.
+
 ## 0.4.0-pre.18 — 2026-10-22
 - Scope guard, fewer false alarms: output redirected to a file **outside** the worktree (`> /tmp/x.log`, `> "$TEMP/out.txt"`, any absolute path elsewhere) is allowed during a TASK, and `->`, `=>` or `>` inside quotes (e.g. `grep "->where("`) no longer count as redirections. Redirections into the worktree, or to a path it cannot resolve, are still blocked.
 - Inline scripts that write files (heredocs or `-c`/`-r` with `open(…, 'w')`, `write_text`, `file_put_contents`, `fs.writeFile`…) are now blocked on purpose, with a clear message; before they were only caught by chance.
