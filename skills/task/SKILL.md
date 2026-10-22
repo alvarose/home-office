@@ -51,7 +51,7 @@ Mechanical changes are made in the repo's current checkout, like the short lane:
 Append one line to `<work>/<log>`, in `language`: date, project (empty if none), repos, what was checked or changed, result. With a project, add the same line to "Tasks done" in `<work>/projects/<repo>/project.md` (create the page from the `project.md` template if missing).
 
 ## 5. Finish
-- In the Claude desktop app, with a project, move this session into its sidebar group (`project` § "Sidebar group").
+- In the Claude desktop app, with a project, move this session into its sidebar group (`project` § "Sidebar group"), unless another session started it for parallel work: then it stays nested under that session.
 - End with "Task done." in the user's language and a link to the log.
 - A task never spans sessions. If it cannot finish here (too big, blocked, needs a decision that changes its nature), stop and offer `/home-office:new` with what you learned.
 - Claude desktop app: with `archive: auto`, archive this session as the very last action (`mcp__ccd_session_mgmt__archive_session` with `session_id: "self"`; it ends the conversation). With `ask`, offer it once.

@@ -3,8 +3,7 @@
 ## Unreleased
 
 ## 0.4.0-pre.19 — 2026-10-22
-- No more nested sessions in the desktop sidebar for any session a home-office session starts, not only hand-overs. `new`, `task` and `stream` (via `new` § 0) detach themselves when they have a parent and move into their project's group.
-- Sessions started for other work (follow-ups, side jobs) begin with a home-office command (`/home-office:task --project <repo> "…"` or `/home-office:new --project <repo> "…"`), so they file themselves.
+- Side sessions for parallel work next to a feature (follow-ups, side jobs) begin with a home-office command (`/home-office:task --project <repo> "…"` or `/home-office:new --project <repo> "…"`), so they run the plugin and get a clear title. They stay nested under the session that started them on purpose; only hand-overs go to the top level.
 - `new` and `task` can run when a session's first message has that command line (no more `disable-model-invocation`), like `resume`.
 - The title hook finds `new`/`task` on any line too, and leaves `--project`/`--stream` out of the title.
 
