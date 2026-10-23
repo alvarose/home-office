@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.24 — 2026-10-23
+- Fast worktrees: new per-repo `link: [vendor, node_modules]`. When a worktree is created and the folder's lock file (`composer.lock`, `package-lock.json`, …) is identical to the main checkout's, `ho.py worktree --link` clones the folder with hard links (the pilot's hub `vendor`, ~16,800 files, in ~9 s instead of a ~3 min `composer install`) and skips the matching install command in `setup`. `vendor/composer` (autoload with `__DIR__` paths) is copied for real, so classes load from the worktree; nested `.git` folders and caches are skipped.
+- Safety: edits to a cloned folder are denied during a TASK (it shares files with the main checkout). A TASK whose file list includes the folder's manifest or lock (`composer.json`, `package.json`, …) gets a real install first: `task-start --setup` removes the clone and runs the install. `worktree-remove` only removes the links, never the main checkout's files.
+
 ## 0.4.0-pre.23 — 2026-10-23
 - No repeated checks: the conductor trusts the checks gate (`gate: pass` means everything ran) and reads failures from `problems`. It never runs the repo's checks by hand; in the pilot, a 5-minute `composer test` ran several times per TASK.
 - `task-end` keeps the TASK open when no gate ran (`gate: null`) and returns a `hint` to call it once with `--run-checks`. Before, the first call removed the scope, so the checks could only be rerun by hand.

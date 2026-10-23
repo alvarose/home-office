@@ -1,6 +1,7 @@
 """home-office helper for the conductor. Deterministic steps, so the model does not improvise them.
 
-  worktree    create (or reuse) a feature worktree and prepare it
+  worktree    create (or reuse) a feature worktree and prepare it (--link clones vendor/
+              node_modules from the main checkout with hard links when the lock files match)
   worktree-remove  remove a feature worktree after the merge (refuses with an open TASK or
               uncommitted changes) and, with --delete-branch, its branch if merged into --base
   task-start  open a TASK in a worktree: closed file list, delete list, deny rules,
@@ -28,19 +29,108 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
-from _common import (changed_files, evaluate_task, git, last_context_tokens,  # noqa: E402
-                     load_scope, run_check, save_scope, scope_path, snapshot)
+from _common import (changed_files, evaluate_task, git, git_dir,  # noqa: E402
+                     last_context_tokens, load_scope, run_check, save_scope, scope_path, snapshot)
 
 
 def out(obj: dict, code: int = 0) -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     print(json.dumps(obj, ensure_ascii=False, indent=2))
     sys.exit(code)
+
+
+# --link: dependency folders cloned from the repo's main checkout with hard links instead of
+# installing them, when the worktree's lock files are identical to the main checkout's.
+LOCKS = {"vendor": ["composer.lock"],
+         "node_modules": ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"]}
+MANIFESTS = {"vendor": ["composer.json", "composer.lock"],
+             "node_modules": ["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+                              "bun.lockb"]}
+INSTALLERS = {"vendor": ("composer install",),
+              "node_modules": ("npm ci", "npm install", "pnpm install", "yarn install", "yarn",
+                               "bun install")}
+# Copied for real, never linked: files rewritten in place (autoload with __DIR__ paths) or caches.
+REAL_COPY = {"vendor": ["composer"], "node_modules": []}
+SKIP = {".git", ".cache", ".vite", ".vite-temp"}
+LINKS_FILE = "home-office-links.json"
+
+
+def links_path(wt: str):
+    gd = git_dir(wt)
+    return os.path.join(gd, LINKS_FILE) if gd else None
+
+
+def load_links(wt: str) -> list:
+    try:
+        with open(links_path(wt), encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return []
+
+
+def save_links(wt: str, links: list) -> None:
+    path = links_path(wt)
+    if not path:
+        return
+    if links:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(links, fh)
+    elif os.path.exists(path):
+        os.remove(path)
+
+
+def same_locks(repo: str, dest: str, folder: str) -> bool:
+    """True if every lock file of `folder` that exists in the repo is identical in the worktree."""
+    found = False
+    for name in LOCKS.get(folder, []):
+        src, dst = os.path.join(repo, name), os.path.join(dest, name)
+        if os.path.isfile(src):
+            found = True
+            if not os.path.isfile(dst):
+                return False
+            with open(src, "rb") as f1, open(dst, "rb") as f2:
+                if f1.read() != f2.read():
+                    return False
+    return found
+
+
+def link_or_copy(src: str, dst: str) -> None:
+    try:
+        os.link(src, dst)
+    except OSError:  # another volume, or links not supported
+        shutil.copy2(src, dst)
+
+
+def clone_folder(repo: str, dest: str, folder: str) -> None:
+    src, dst = os.path.join(repo, folder), os.path.join(dest, folder)
+    real = set(REAL_COPY.get(folder, []))
+    shutil.copytree(src, dst, copy_function=link_or_copy,
+                    ignore=lambda d, names: [n for n in names if n in SKIP or
+                                             (os.path.normpath(d) == os.path.normpath(src) and n in real)])
+    for name in real:
+        if os.path.isdir(os.path.join(src, name)):
+            shutil.copytree(os.path.join(src, name), os.path.join(dst, name))
+
+
+def remove_tree(path: str) -> None:
+    def onexc(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=onexc)
+    else:
+        shutil.rmtree(path, onerror=lambda f, p, e: onexc(f, p, e))
+
+
+def installs(cmd: str, folder: str) -> bool:
+    c = " ".join(cmd.split())
+    return any(c == i or c.startswith(i + " ") for i in INSTALLERS.get(folder, ()))
 
 
 def cmd_worktree(a) -> None:
@@ -69,12 +159,24 @@ def cmd_worktree(a) -> None:
             elif os.path.isdir(src):  # e.g. built assets git ignores
                 shutil.copytree(src, dst)
                 copied.append(rel + "/")
+        linked = []
+        for folder in a.link or []:
+            folder = folder.strip("/\\")
+            if (folder in LOCKS and os.path.isdir(os.path.join(repo, folder))
+                    and not os.path.exists(os.path.join(dest, folder)) and same_locks(repo, dest, folder)):
+                clone_folder(repo, dest, folder)
+                linked.append(folder)
+        save_links(dest, linked)
         for cmd in a.setup or []:
+            skipped = [f for f in linked if installs(cmd, f)]
+            if skipped:
+                setup.append({"command": cmd, "ok": True, "skipped": f"{skipped[0]} cloned from the main checkout"})
+                continue
             ok, tail = run_check(cmd, dest, timeout=1800, tail=15)
             setup.append({"command": cmd, "ok": ok, **({} if ok else {"output": tail})})
     branch = git(dest, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     out({"ok": all(s["ok"] for s in setup), "worktree": dest, "branch": branch,
-         "created": created, "copied": copied, "setup": setup})
+         "created": created, "copied": copied, "linked": load_links(dest), "setup": setup})
 
 
 def parse_deny(items):
@@ -93,13 +195,27 @@ def cmd_task_start(a) -> None:
     if current and current.get("gate") not in ("pass", "fail") and not a.force:
         out({"ok": False, "error": f"another task is active here: {current.get('task')}. "
                                    f"Run task-end first, or pass --force."}, 1)
+    links, reinstalled = load_links(wt), []
+    listed = [f.replace("\\", "/") for f in (a.file or []) + (a.delete or [])]
+    for folder in list(links):
+        if any(os.path.basename(f) in MANIFESTS.get(folder, []) and "/" not in f.strip("/") for f in listed):
+            # The TASK changes this folder's dependencies: give the worktree its own real install.
+            remove_tree(os.path.join(wt, folder))
+            links.remove(folder)
+            for cmd in a.setup or []:
+                if installs(cmd, folder):
+                    ok, tail = run_check(cmd, wt, timeout=1800, tail=15)
+                    reinstalled.append({"command": cmd, "ok": ok, **({} if ok else {"output": tail})})
+    save_links(wt, links)
+    deny_links = [{"glob": f"{f}/**", "reason": f"{f}/ is shared with the main checkout (hard links): never edit it"}
+                  for f in links]
     scope = {
         "task": a.task,
         "worktree": wt,
         "files": [f.replace("\\", "/") for f in a.file or []],
         "allow": [g.replace("\\", "/") for g in a.allow or []],
         "delete": [f.replace("\\", "/") for f in a.delete or []],
-        "deny": parse_deny(a.deny),
+        "deny": parse_deny(a.deny) + deny_links,
         "prepare": a.prepare or [],
         "checks": a.check or [],
         "ignore": [g.replace("\\", "/") for g in a.ignore or []],
@@ -113,7 +229,8 @@ def cmd_task_start(a) -> None:
     save_scope(wt, scope)
     out({"ok": True, "task": a.task, "worktree": wt, "files": scope["files"],
          "delete": scope["delete"], "deny": scope["deny"], "prepare": scope["prepare"],
-         "checks": scope["checks"], "prompt_marker": f"HOME-OFFICE-WORKTREE: {wt}"})
+         "checks": scope["checks"], "linked": links, "reinstalled": reinstalled,
+         "prompt_marker": f"HOME-OFFICE-WORKTREE: {wt}"})
 
 
 def summary(scope: dict) -> dict:
@@ -221,6 +338,9 @@ def main() -> None:
     w.add_argument("--base", required=True)
     w.add_argument("--copy", action="append", help="untracked file or folder to copy from the repo, e.g. .env or public/build")
     w.add_argument("--setup", action="append", help="command to run once in a new worktree")
+    w.add_argument("--link", action="append",
+                   help="dependency folder (vendor, node_modules) to clone from the main checkout with "
+                        "hard links instead of installing it, when the lock files are identical (repeat)")
     w.set_defaults(fn=cmd_worktree)
 
     r = sub.add_parser("worktree-remove")
@@ -246,6 +366,9 @@ def main() -> None:
     s.add_argument("--prepare", action="append",
                    help="command run before the checks, e.g. a code generator (repeat)")
     s.add_argument("--check", action="append", help="command that must pass (repeat)")
+    s.add_argument("--setup", action="append",
+                   help="the repo's setup commands: used to reinstall a cloned dependency folder when "
+                        "the TASK changes its manifest or lock file (repeat)")
     s.add_argument("--ignore", action="append",
                    help="glob of generated files that never count as changed (repeat; common "
                         "build and test artifacts are ignored already)")

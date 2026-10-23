@@ -15,7 +15,9 @@ sources:                      # knowledge sources, all optional (/home-office:so
 repos:                        # each repo: path, roles, checks (must pass to close a TASK),
                               # copy (untracked files a new worktree needs), setup (run once per new worktree)
                               # and prepare (run before the checks of every TASK, e.g. code generators);
-                              # copy takes files or folders; base overrides base_branch for one repo
+                              # copy takes files or folders; base overrides base_branch for one repo;
+                              # link: [vendor, node_modules] clones them from the main checkout (hard links)
+                              # instead of installing, when the lock files are identical
   app: { path: ., roles: [backend, frontend], checks: [], copy: [], setup: [], prepare: [] }
 
 layers: [backend, frontend]   # execution order inside a feature
