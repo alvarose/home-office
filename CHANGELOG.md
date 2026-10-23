@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.0-pre.23 — 2026-10-23
+- No repeated checks: the conductor trusts the checks gate (`gate: pass` means everything ran) and reads failures from `problems`. It never runs the repo's checks by hand; in the pilot, a 5-minute `composer test` ran several times per TASK.
+- `task-end` keeps the TASK open when no gate ran (`gate: null`) and returns a `hint` to call it once with `--run-checks`. Before, the first call removed the scope, so the checks could only be rerun by hand.
+
 ## 0.4.0-pre.22 — 2026-10-22
 - One offer per hand-over: the card is the only place the next session is offered, with no extra "start it?" question or button in the app's next-step box. If the user says to start it, the conductor starts the existing card by its `proposal_id` instead of proposing a new one. Before, a planned cut showed two offers for the same session.
 

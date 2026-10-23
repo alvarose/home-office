@@ -138,6 +138,12 @@ def cmd_task_end(a) -> None:
         scope["gate"] = "fail" if problems else "pass"
         save_scope(wt, scope)
     result = summary(scope)
+    if scope.get("gate") not in ("pass", "fail"):
+        # No gate ran (not done by a home-office executor). Keep the TASK open so the checks run
+        # once through --run-checks, instead of the conductor running them by hand.
+        result["hint"] = ("no checks gate ran for this TASK: run task-end again with --run-checks "
+                          "(once) instead of running the checks by hand")
+        out({"ok": True, **result})
     if not a.keep:
         try:
             os.remove(scope_path(wt))
