@@ -7,7 +7,8 @@ are never affected.
 
 Inside an active task it denies:
   - any path matching a `deny` rule (project hard rules, e.g. migrations outside one repo);
-  - any path outside the TASK's closed file list (`files` / `allow`), when the task has one;
+  - any path outside the TASK's closed file list (`files` / `allow`), when the task has one.
+    Both are matched by exact path or glob, so a folder only works written as `<folder>/**`;
   - Bash/PowerShell commands aimed at that worktree that write files (redirections into the
     worktree — output redirected to $TEMP, /tmp or any path outside it is fine —, inline
     scripts that write files, tee,

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Docs: a folder in a TASK's file list must be written as a glob (`<folder>/**`); a bare `<folder>/` matches no path and the scope guard blocks every edit under it. Said where the conductor builds the command (`new` step 2), in the guard's own docstring and as a known pitfall in the plugin's card. `--delete` keeps the opposite convention (exact paths, a folder covers its contents).
 
 ## 0.4.0-pre.24 — 2026-10-23
 - Fast worktrees: new per-repo `link: [vendor, node_modules]`. When a worktree is created and the folder's lock file (`composer.lock`, `package-lock.json`, …) is identical to the main checkout's, `ho.py worktree --link` clones the folder with hard links (the pilot's hub `vendor`, ~16,800 files, in ~9 s instead of a ~3 min `composer install`) and skips the matching install command in `setup`. `vendor/composer` (autoload with `__DIR__` paths) is copied for real, so classes load from the worktree; nested `.git` folders and caches are skipped.
