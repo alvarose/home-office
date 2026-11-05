@@ -247,12 +247,32 @@ def windows_command(cmd: str) -> str:
     return cmd
 
 
+def save_failed_output(cmd: str, text: str) -> str:
+    """Write the full output of a failed check to the temp folder; returns a note with its path.
+
+    The tail kept in the report is often too short to see the real cause of a failure
+    (e.g. the underlying message of an exception). Never raises."""
+    try:
+        import tempfile
+        folder = os.path.join(tempfile.gettempdir(), "home-office-checks")
+        os.makedirs(folder, exist_ok=True)
+        slug = re.sub(r"[^A-Za-z0-9]+", "-", cmd).strip("-")[:40] or "check"
+        path = os.path.join(folder, f"{time.strftime('%Y%m%d-%H%M%S')}-{slug}.log")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(f"$ {cmd}\n\n{text}\n")
+        return f"\n(full output: {path})"
+    except Exception:
+        return ""
+
+
 def run_check(cmd: str, cwd: str, timeout: int = 1200, tail: int = 40):
     try:
         res = subprocess.run(windows_command(cmd), cwd=cwd, shell=True, capture_output=True,
                              text=True, encoding="utf-8", errors="replace", timeout=timeout)
-        lines = ANSI.sub("", (res.stdout or "") + (res.stderr or "")).strip().splitlines()
-        return res.returncode == 0, "\n".join(lines[-tail:])
+        full = ANSI.sub("", (res.stdout or "") + (res.stderr or "")).strip()
+        lines = full.splitlines()
+        note = "" if res.returncode == 0 else save_failed_output(cmd, full)
+        return res.returncode == 0, "\n".join(lines[-tail:]) + note
     except subprocess.TimeoutExpired:
         return False, f"timed out after {timeout}s"
     except Exception as exc:  # command not found, etc.
