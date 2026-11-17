@@ -110,8 +110,12 @@ def link_or_copy(src: str, dst: str) -> None:
 def clone_folder(repo: str, dest: str, folder: str) -> None:
     src, dst = os.path.join(repo, folder), os.path.join(dest, folder)
     real = set(REAL_COPY.get(folder, []))
+
+    def is_reparse(p: str) -> bool:
+        return os.path.islink(p) or (hasattr(os.path, "isjunction") and os.path.isjunction(p))
+
     shutil.copytree(src, dst, copy_function=link_or_copy,
-                    ignore=lambda d, names: [n for n in names if n in SKIP or
+                    ignore=lambda d, names: [n for n in names if n in SKIP or is_reparse(os.path.join(d, n)) or
                                              (os.path.normpath(d) == os.path.normpath(src) and n in real)])
     for name in real:
         if os.path.isdir(os.path.join(src, name)):

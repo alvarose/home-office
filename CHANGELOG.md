@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Fast worktrees: cloning a `link` folder (`vendor`, `node_modules`) skips symlinks and Windows junctions inside it (e.g. path repositories, `node_modules/.bin`) instead of following them or failing on them.
+
 ## 0.4.0-pre.25 — 2026-11-17
 - **Keeping features small** (new WORKFLOW section). In the pilot, minor fixes grew into features of 16–20 TASKs with several review rounds.
   - Size at gate 1: the SPEC header has two new lines, `Unblocks:` and `Estimate:` (TASKs and sessions, with the limit). The conductor shows both when asking for gate 1; an estimate over the limit adds a "trim or split" decision.
