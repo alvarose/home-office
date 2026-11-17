@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.4.0-pre.25 — 2026-11-17
 - **Keeping features small** (new WORKFLOW section). In the pilot, minor fixes grew into features of 16–20 TASKs with several review rounds.
   - Size at gate 1: the SPEC header has two new lines, `Unblocks:` and `Estimate:` (TASKs and sessions, with the limit). The conductor shows both when asking for gate 1; an estimate over the limit adds a "trim or split" decision.
   - New `limits.tasks_per_feature` (default 8). The conductor passes it to the architect, whose plan summary starts with `tasks: n (limit m)` and, over it, a trim or split proposal. The conductor says the number before asking for gate 2; keeping an over-limit PLAN needs the user's explicit word, recorded in `DECISIONS.md`. What is left out goes to the project's backlog.
   - New `limits.review_rounds` (default 1). One round; another only to check fixes of high or medium findings, and it reviews only the fix commits. Low findings are written to `REVIEW.md` plus one line in the project's backlog, and never become TASKs or another round unless the user asks. `new` § "Review → gate 3", `resume`, the short lane, `reviewer` (severity guide, verdict line `high n · medium n · low n · another round: yes|no`), `deep-reviewer` and the `REVIEW.md` template follow it.
   - Classifier: minor fixes (audit or review findings, cleanups, style) go to `short` or the new `lane: task` by default, even across repos or over ~5 files, unless they change a contract or a schema. `new` offers `/home-office:task` for `lane: task`; `task` accepts them.
+- Checks gate: when a check fails, its full output is saved to `<temp>/home-office-checks/<date>-<command>.log` and the report adds that path; the report itself still keeps only the tail.
 - Docs: a folder in a TASK's file list must be written as a glob (`<folder>/**`); a bare `<folder>/` matches no path and the scope guard blocks every edit under it. Said where the conductor builds the command (`new` step 2), in the guard's own docstring and as a known pitfall in the plugin's card. `--delete` keeps the opposite convention (exact paths, a folder covers its contents).
 
 ## 0.4.0-pre.24 — 2026-10-23
