@@ -7,8 +7,10 @@
   task-start  open a TASK in a worktree: closed file list, delete list, deny rules,
               prepare commands, checks, baseline
   task-status show the active TASK of a worktree
-  task-end    close the TASK: print the gate result and the touched files, remove the scope file
-              (--run-checks: evaluate it here when no checks gate ran, e.g. delegated tools)
+  task-end    close the TASK: always print the gate (pass / fail; it runs the checks here when no
+              checks gate ran, e.g. delegated tools) and the touched files, remove the scope file,
+              and count rework (gate fail, or --report blocked / needs-plan-change) in the
+              feature's STATE.md. Called again, it repeats the last TASK's result.
   context     print the context size of a session transcript (debugging)
 
 Usage examples (paths are absolute):
@@ -35,8 +37,9 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
-from _common import (changed_files, evaluate_task, git, git_dir,  # noqa: E402
-                     last_context_tokens, load_scope, run_check, save_scope, scope_path, snapshot)
+from _common import (bump_rework, changed_files, evaluate_task, feature_state,  # noqa: E402
+                     git, git_dir, last_context_tokens, load_scope, run_check, save_scope,
+                     scope_path, snapshot)
 
 
 def out(obj: dict, code: int = 0) -> None:
@@ -213,9 +216,11 @@ def cmd_task_start(a) -> None:
     save_links(wt, links)
     deny_links = [{"glob": f"{f}/**", "reason": f"{f}/ is shared with the main checkout (hard links): never edit it"}
                   for f in links]
+    state = os.path.abspath(a.state) if a.state else feature_state(a.task, os.getcwd())
     scope = {
         "task": a.task,
         "worktree": wt,
+        "state": state,
         "files": [f.replace("\\", "/") for f in a.file or []],
         "allow": [g.replace("\\", "/") for g in a.allow or []],
         "delete": [f.replace("\\", "/") for f in a.delete or []],
@@ -234,12 +239,65 @@ def cmd_task_start(a) -> None:
     out({"ok": True, "task": a.task, "worktree": wt, "files": scope["files"],
          "delete": scope["delete"], "deny": scope["deny"], "prepare": scope["prepare"],
          "checks": scope["checks"], "linked": links, "reinstalled": reinstalled,
-         "prompt_marker": f"HOME-OFFICE-WORKTREE: {wt}"})
+         "state": state, "prompt_marker": f"HOME-OFFICE-WORKTREE: {wt}"})
 
 
 def summary(scope: dict) -> dict:
-    return {k: scope.get(k) for k in ("task", "worktree", "gate", "gate_blocks", "touched",
+    # `gate` first: it is the one field the conductor must always read.
+    return {k: scope.get(k) for k in ("gate", "task", "worktree", "gate_blocks", "touched",
                                       "generated", "results", "problems", "started", "last_run")}
+
+
+LAST_FILE = "home-office-last-task.json"
+# Executor reports that send a TASK back, like a failed gate.
+REWORK_REPORTS = {"blocked", "needs-plan-change"}
+
+
+def last_path(wt: str):
+    gd = git_dir(wt)
+    return os.path.join(gd, LAST_FILE) if gd else None
+
+
+def load_last(wt: str):
+    try:
+        with open(last_path(wt), encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def save_last(wt: str, last: dict) -> None:
+    try:
+        with open(last_path(wt), "w", encoding="utf-8") as fh:
+            json.dump(last, fh, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def record_rework(rec: dict, report) -> dict:
+    """Count a TASK that went back (gate fail, or a blocked / needs-plan-change report) once,
+    in its feature's STATE.md. `rec` is the scope or the last result; it is updated in place."""
+    if report:
+        rec["report"] = report
+    reason = "gate fail" if rec.get("gate") == "fail" else \
+        (f"report {rec.get('report')}" if rec.get("report") in REWORK_REPORTS else None)
+    info = {"state": rec.get("state"), "recorded": False}
+    if rec.get("rework_count") is not None:  # already counted for this TASK
+        info.update(recorded=True, count=rec["rework_count"], reason=rec.get("rework_reason"))
+        return info
+    if not reason:
+        return info
+    info["reason"] = reason
+    if not rec.get("state"):
+        info["note"] = "no feature STATE.md (short lane or task): nothing to record"
+        return info
+    try:
+        rec["rework_count"] = bump_rework(rec["state"])
+        rec["rework_reason"] = reason
+        info.update(recorded=True, count=rec["rework_count"])
+    except Exception as exc:  # never lose the gate over the counter
+        info["error"] = f"could not update {rec['state']}: {exc}"
+    return info
 
 
 def cmd_task_status(a) -> None:
@@ -251,26 +309,43 @@ def cmd_task_end(a) -> None:
     wt = os.path.abspath(a.worktree)
     scope = load_scope(wt)
     if not scope:
-        out({"ok": True, "active": False})
-    if a.run_checks and scope.get("gate") not in ("pass", "fail"):
-        # No executor gate ran (delegated tool, tuning session): evaluate here, once.
-        problems = evaluate_task(wt, scope)
-        scope["problems"] = problems
-        scope["gate"] = "fail" if problems else "pass"
-        save_scope(wt, scope)
-    result = summary(scope)
+        # Already closed (a second call): repeat the last TASK's result, so the gate is never lost.
+        last = load_last(wt)
+        if not last:
+            out({"ok": True, "gate": None, "active": False,
+                 "note": "no TASK was ever opened in this worktree"})
+        rework = record_rework(last, a.report)
+        save_last(wt, last)
+        out({"ok": True, **{k: last.get(k) for k in last if k not in EXTRA}, "active": False,
+             "note": "no TASK open: this is the result of the last one, already closed",
+             "gate_by": last.get("gate_by"), "report": last.get("report"), "rework": rework})
     if scope.get("gate") not in ("pass", "fail"):
-        # No gate ran (not done by a home-office executor). Keep the TASK open so the checks run
-        # once through --run-checks, instead of the conductor running them by hand.
-        result["hint"] = ("no checks gate ran for this TASK: run task-end again with --run-checks "
-                          "(once) instead of running the checks by hand")
-        out({"ok": True, **result})
-    if not a.keep:
+        if a.no_checks:
+            scope["gate"], scope["gate_by"] = "skipped", "task-end --no-checks"
+        else:
+            # No executor gate ran (delegated tool, tuning, a hook that did not fire): evaluate it
+            # here, once, so task-end always answers pass or fail.
+            problems = evaluate_task(wt, scope)
+            scope["problems"] = problems
+            scope["gate"], scope["gate_by"] = ("fail" if problems else "pass"), "task-end"
+    scope["gate_by"] = scope.get("gate_by") or "checks gate"
+    if "state" not in scope:  # TASK opened by an older ho.py
+        scope["state"] = feature_state(scope.get("task"), os.getcwd())
+    rework = record_rework(scope, a.report)
+    if a.keep:
+        save_scope(wt, scope)
+    else:
         try:
             os.remove(scope_path(wt))
         except OSError:
             pass
-    out({"ok": True, **result})
+    save_last(wt, {**summary(scope), **{k: scope.get(k) for k in EXTRA}})
+    out({"ok": True, **summary(scope), "active": bool(a.keep), "gate_by": scope["gate_by"],
+         "report": scope.get("report"), "rework": rework})
+
+
+# Kept with the last result besides the summary, so a repeated task-end can answer and count once.
+EXTRA = ("state", "report", "gate_by", "rework_count", "rework_reason")
 
 
 def cmd_context(a) -> None:
@@ -379,6 +454,9 @@ def main() -> None:
     s.add_argument("--attempts", type=int, default=2)
     s.add_argument("--check-timeout", type=int, default=1200)
     s.add_argument("--force", action="store_true")
+    s.add_argument("--state", help="the feature's STATE.md, where task-end counts rework; by default "
+                                   "found from --task 'NN-name / …' and the .home-office.yml of the "
+                                   "current folder")
     s.set_defaults(fn=cmd_task_start)
 
     t = sub.add_parser("task-status")
@@ -388,8 +466,14 @@ def main() -> None:
     e = sub.add_parser("task-end")
     e.add_argument("--worktree", required=True)
     e.add_argument("--keep", action="store_true", help="print the result but keep the scope file")
+    e.add_argument("--report", help="the executor's status (done, blocked, needs-plan-change); "
+                                    "blocked and needs-plan-change count as rework, like gate fail")
+    e.add_argument("--no-checks", action="store_true",
+                   help="close a TASK abandoned before any work, without running the checks "
+                        "(gate: skipped)")
     e.add_argument("--run-checks", action="store_true",
-                   help="if no checks gate ran, run prepare, the scope check and the checks now")
+                   help="kept for compatibility: when no checks gate ran, task-end now always runs "
+                        "prepare, the scope check and the checks itself")
     e.set_defaults(fn=cmd_task_end)
 
     c = sub.add_parser("context")

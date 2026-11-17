@@ -15,6 +15,8 @@ You receive: the request, the list of repos from `.home-office.yml` (with their 
 - **feature** only if one of them changes a contract (API, payloads, props, events, DTOs) or the schema (migrations, shared models).
 A long list of minor fixes is several short-lane runs or tasks, never one big feature: say so in `reason`.
 
+**Long jobs are tasks.** Ongoing operational work with nothing to design — watching or babysitting something, operating a server, a bot or a deploy, a long run of manual steps — is **task**, even if it will take days: it runs as a chain of short task sessions with a hand-over note (say so in `reason`). It is **feature** only if it means building or changing something real (code, a contract, a schema).
+
 Otherwise, choose **feature** if any of these is likely:
 - it touches more than one repo;
 - it changes a contract or the schema;

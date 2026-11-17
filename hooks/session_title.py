@@ -21,7 +21,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _common import emit, find_up, read_stdin_json  # noqa: E402
+from _common import emit, find_up, read_stdin_json, work_dir  # noqa: E402
 
 # A hand-over session's first message starts with a "Background…" block from the app, so the
 # resume command may be on any line, not only the first.
@@ -32,20 +32,7 @@ STATUS_RE = re.compile(r"^\s*/home-office:status(?:[ \t]+(\S+))?[ \t]*$", re.MUL
 # Slash commands may arrive in tag form: <command-name>/x</command-name> <command-args>a</command-args>
 TAG_NAME_RE = re.compile(r"<command-name>\s*(/home-office:[\w-]+)\s*</command-name>")
 TAG_ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
-WORK_RE = re.compile(r"^\s*work\s*:\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
 MAX_LEN = 60
-
-
-def work_dir(config_path: str) -> str:
-    base = os.path.dirname(config_path)
-    try:
-        with open(config_path, encoding="utf-8") as fh:
-            m = WORK_RE.search(fh.read())
-        if m:
-            return os.path.normpath(os.path.join(base, m.group(1)))
-    except Exception:
-        pass
-    return base
 
 
 def feature_name(config_path: str, arg: str) -> str:

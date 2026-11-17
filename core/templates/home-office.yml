@@ -53,6 +53,8 @@ limits:
   tasks_per_feature: 8        # over this, the architect proposes trimming or splitting, and you hear it before gate 2
   review_rounds: 1            # review rounds per feature; one more only to check fixes of high or medium findings
                               # (low findings go to REVIEW.md and the project backlog, never to new TASKs unasked)
+  loose_session_hours: 12     # a session opened here without a home-office command (or kept after status) is
+                              # warned once at this age: long jobs go to /home-office:task, one step per session
 
 handover: card                # at a planned cut, in the Claude desktop app: card = propose the next session
                               # (one click); auto = start it, unless the next step waits for you

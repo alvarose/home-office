@@ -16,6 +16,12 @@ If it is empty, ask what to check or do and stop.
 
 **Project.** `--project <repo>` (strip it from the request; it must be a key of `repos`, else ask) files the task under that project and makes that repo its default scope. Without it, the project is the single repo the task covers; a task over several repos has no project unless the user names one.
 
+## Long jobs
+Ongoing loose work — a watcher, operating a server or a bot, a long migration run by hand — never lives in one session for days: it runs as a chain of tasks, **one step per session**, each ending with a hand-over note.
+- **Note.** `<work>/jobs/<name>.md` (template `job.md`, in `language`): what the job is, its state, what was done (one dated line per step) and the next step. If the request names a job or its note, read **only** that note first and continue from its next step; otherwise create it at the end of the first step.
+- **One step.** Do the step as a check or a change (§ 2), report (§ 3), record (§ 4). Then update the note: state, one line for this step, the next step.
+- **Hand over.** In the Claude desktop app, propose the next step as a card (`mcp__ccd_session__start_session`, `initiation: "own_initiative"`, `context: "fresh"`, `use_worktree: false`, `model`: the full id of `roles.conductor.model`, `title`: `task: <name>`, `prompt`: `/home-office:task [--project <repo>] "<name>: <next step> (note: jobs/<name>.md)"`); always end with that command as a text line too. Stop when the step is done or the context nears `limits.context_tokens`, whichever comes first.
+
 ## 0. Preconditions
 Follow `new` § 0 (`${CLAUDE_PLUGIN_ROOT}/skills/new/SKILL.md`): config in the current working directory, conductor model, board, language. Also apply its "Links to documents" and `close`'s rule that every git command you give the user is `git -C <repo> …`.
 
@@ -35,7 +41,7 @@ Follow `new` § 0 (`${CLAUDE_PLUGIN_ROOT}/skills/new/SKILL.md`): config in the c
    - `--deny` comes from the `guards` that apply to the repo.
    - `--delete` is only for paths the request names, after confirming the list with the user.
 3. Launch `home-office:implementer` (model from the role that matches the repo, else `roles.backend`). The first line of its prompt is `HOME-OFFICE-WORKTREE: <repo>`; then give it the change, the relevant knowledge sections, `hard_rules`, the paths it may delete, and the prepare commands and checks.
-4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-end --worktree <repo>` and keep `gate`, `touched` and `problems`.
+4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-end --worktree <repo> --report <the implementer's status>` and keep `gate` (always `pass` or `fail`), `touched` and `problems`.
 
 Mechanical changes are made in the repo's current checkout, like the short lane: no feature branch and no worktree.
 
@@ -53,5 +59,5 @@ Append one line to `<work>/<log>`, in `language`: date, project (empty if none),
 ## 5. Finish
 - In the Claude desktop app, with a project, move this session into its sidebar group (`project` § "Sidebar group"), unless another session started it for parallel work: then it stays nested under that session.
 - End with "Task done." in the user's language and a link to the log.
-- A task never spans sessions. If it cannot finish here (too big, blocked, needs a decision that changes its nature), stop and offer `/home-office:new` with what you learned.
+- A task never spans sessions. If it cannot finish here (too big, blocked, needs a decision that changes its nature), stop and offer `/home-office:new` with what you learned. A **long job** is the exception: see below.
 - Claude desktop app: with `archive: auto`, archive this session as the very last action (if refused, `project` § "Archiving sessions") (`mcp__ccd_session_mgmt__archive_session` with `session_id: "self"`; it ends the conversation). With `ask`, offer it once.

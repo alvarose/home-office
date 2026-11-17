@@ -34,6 +34,7 @@ A classifier decides; the user can override with one word.
 
 - **Short lane**: small fix, small change, question. One implementer subagent, no SPEC or plan. Still goes through review, diff and commit (gates 3 and 4) and leaves one line in `log.md`.
 - **Task** (`/home-office:task`, chosen by the user): one self-contained job — a check, a cleanup, a mechanical change — across any number of repos, with no design. One subagent per repo (the explorer for read-only checks), a results table, one line in `log.md`, and the session ends. Anything that needs decisions goes to the feature lane.
+- **Long jobs** (a watcher, operating a server or a bot): tasks too, one step per session, each ending with a hand-over note in `jobs/<name>.md` and the next step offered as a new session. Never one conversation for days, and never on the strong model (see "Loose sessions").
 - **Feature lane**: anything that touches more than one repo, changes a contract or schema, or is estimated at more than ~5 files.
 - **Minor fixes** (findings from an audit or a review, cleanups, style) go to the short lane or to a task by default, even across repos or over ~5 files, unless one of them changes a contract or a schema. A long list runs as several short changes or tasks; what waits goes to the project's backlog. Only the user can send them to the feature lane.
 
@@ -61,9 +62,20 @@ Whenever a step writes or updates a document, the conductor ends its message wit
 
 Six header lines (status, last session, branches, rework count, stream, project) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read.
 
+The rework count is written by `ho.py task-end`, not by the conductor: each TASK that goes back (its gate fails, or its executor reports `blocked` or `needs-plan-change`) adds 1, once per TASK. A `STATE.md` without the line gets it after the branches line; a translated label is found by being the header line with a bare number.
+
+## Loose sessions
+
+A session opened in the work folder without a home-office command (a conversation, a watcher, a server chat) or kept going after `status` is **loose**. It is where long sessions and the strong model creep back in, so:
+
+- `status` runs on Sonnet whatever the session's model, and is a snapshot: the work it lists starts in its own sessions.
+- The context cap hook warns a loose session once when it runs on another model than `roles.conductor`, and once when it has been open for `limits.loose_session_hours` (default 12): long jobs go to `/home-office:task`, one step per session with a hand-over note. At the context cap it is told to write that note and continue in a new session.
+- Sessions opened outside the work folder (e.g. straight in a repo) are not seen by the hooks.
+
 ## Limits (defaults, configurable)
 
 - Context cap per session: 150,000 tokens → close and start a new session instead of compacting.
+- Loose sessions: 12 hours (`loose_session_hours`) → one warning to hand over to a new session.
 - TASKs per conductor session: 2 → then a planned cut, before the context fills up. In the Claude desktop app the next session is proposed as a card, or started on its own with `handover: auto` when nothing waits for the user. The planning session (brief, SPEC, PLAN) also ends at gate 2. Real use shows a conductor's context holds about SPEC + PLAN + two TASKs.
 - Finished sessions (Claude desktop app only): after a hand-over, `resume` archives the previous session of the feature if idle; `close` archives the feature's other idle sessions when it is done, and offers to archive itself last. `archive: ask` (default) asks once; `auto` does not. A parent with other children still in use is never archived (archiving cascades to idle side sessions).
 - TASKs per feature: 8 (`tasks_per_feature`) → over it, trim or split before gate 2 (see "Keeping features small").
@@ -106,8 +118,8 @@ A **project** is a logical grouping, one per repo: every repo in `repos` is a pr
 The rules above are enforced, not only requested. They act only inside a worktree with an active task (opened by `scripts/ho.py task-start`, stored in that worktree's private git dir), so normal sessions are never affected.
 
 - **scope guard** (before Edit/Write/Bash): blocks edits outside the TASK's file list, paths forbidden by the project's `guards`, and Bash commands aimed at the worktree that write files or change git state. The file list is matched **by exact path or glob**, so a whole folder has to be listed as `<folder>/**`: a bare `<folder>/` matches no path and every edit under it is blocked. The one exception: `rm`, `unlink`, `git rm` or `Remove-Item` on exact paths that are all in the TASK's delete list (a listed folder covers everything under it).
-- **checks gate** (when an executor finishes): runs the repo's `prepare` commands, compares the files changed since the task started with the list (files written by `prepare` and planned deletions are in scope), and runs the repo's checks. On failure the executor is sent back to fix it, up to `task_attempts` times; then the task is marked `fail` and the conductor escalates. Where no executor gate runs (delegated tools, tuning), `task-end --run-checks` does the same once.
-- **context cap** (on each prompt and after each subagent): warns at 80 % of `limits.context_tokens` and, over the cap, tells the session to close and continue in a new one.
+- **checks gate** (when an executor finishes): runs the repo's `prepare` commands, compares the files changed since the task started with the list (files written by `prepare` and planned deletions are in scope), and runs the repo's checks. On failure the executor is sent back to fix it, up to `task_attempts` times; then the task is marked `fail` and the conductor escalates. Where no executor gate runs (delegated tools, tuning, a hook that did not fire), `task-end` does the same once, so it always answers `pass` or `fail`; it also counts the TASK's rework in `STATE.md`.
+- **context cap** (on each prompt and after each subagent): warns at 80 % of `limits.context_tokens` and, over the cap, tells the session to close and continue in a new one. In loose sessions it also warns about the model and the age (see "Loose sessions").
 
 - **session title** (on each prompt): `/home-office:resume NN` titles the session `feat: NN-name`, and `/home-office:new <request>` titles it `new: <request>`. In the Claude desktop app, `new` then renames it to `feat: NN-name` (or `short: <name>`) once the work has a name.
 
@@ -115,4 +127,4 @@ All guards are fail-open: an error in a guard never blocks work. `HOME_OFFICE_GU
 
 ## Delegation
 
-A role can be delegated to another CLI tool (e.g. Gemini CLI, Codex). The delegated tool always runs inside the feature worktree; afterwards the conductor checks the diff (only the TASK's files) and the checks with `task-end --run-checks`. Any violation counts as a failed attempt.
+A role can be delegated to another CLI tool (e.g. Gemini CLI, Codex). The delegated tool always runs inside the feature worktree; afterwards the conductor checks the diff (only the TASK's files) and the checks with `task-end`, which runs them itself when no gate ran. Any violation counts as a failed attempt.

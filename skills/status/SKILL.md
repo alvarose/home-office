@@ -3,6 +3,7 @@ name: status
 description: Show the state of all home-office work in this project at a glance, grouped by project (one per repo) and stream - features in flight, the gate each one is at, blockers and stalled work. Takes an optional project to show only that one. Reads only small files. Use only when the user invokes /home-office:status.
 argument-hint: "[<project>]"
 disable-model-invocation: true
+model: sonnet
 ---
 
 # /home-office:status
@@ -24,3 +25,5 @@ The argument is a project (a repo key from `repos`; a unique part of the name is
    With a project argument, only commands for that project's work. At most ~8 lines; if there are more, keep the order and say how many were left out. In the Claude desktop app, also offer once to start the first "ready to continue" one as a new session (`mcp__ccd_session__start_session`, `initiation: "own_initiative"`, the same fields as `new` § "Handing over"): a card, nothing runs until the user starts it. It is the only offer: no extra question or button about it (`new` § "Handing over" step 4).
 
 Read nothing else. Suggest only these next commands, never new work.
+
+**A snapshot, not a workplace.** This command runs on Sonnet whatever the session's model. Once it has answered, the session's job is done: if the user goes on to ask for work here (fix this, look into that, watch a server), do not do it in this session; point to the command that fits (`/home-office:resume NN-name`, `/home-office:task "<job>"`, `/home-office:new "<request>"`) and, in the Claude desktop app, offer it as a card as above. Answering a question about the snapshot itself is fine.

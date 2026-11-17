@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 
 SCOPE_FILE = "home-office-task.json"
 IS_WINDOWS = os.name == "nt"
@@ -380,3 +381,138 @@ def last_context_tokens(transcript_path: str, tail_bytes: int = 400_000):
         if total:
             return total
     return None
+
+
+def last_model(transcript_path: str, tail_bytes: int = 400_000):
+    """Model id of the latest main-session model call (e.g. "claude-sonnet-…"), or None."""
+    if not transcript_path or not os.path.isfile(transcript_path):
+        return None
+    try:
+        size = os.path.getsize(transcript_path)
+        with open(transcript_path, "rb") as fh:
+            fh.seek(max(0, size - tail_bytes))
+            chunk = fh.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    for line in reversed(chunk.splitlines()):
+        if '"model"' not in line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        model = (entry.get("message") or {}).get("model") or ""
+        if model and not model.startswith("<"):  # "<synthetic>" for app-made messages
+            return model
+    return None
+
+
+def session_start(transcript_path: str):
+    """Epoch seconds of the first timestamp in a session transcript, or None."""
+    if not transcript_path or not os.path.isfile(transcript_path):
+        return None
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i > 50:
+                    break
+                m = re.search(r'"timestamp"\s*:\s*"([^"]+)"', line)
+                if m:
+                    stamp = m.group(1).replace("Z", "+00:00")
+                    return datetime.fromisoformat(stamp).timestamp()
+    except Exception:
+        return None
+    return None
+
+
+# ---------------------------------------------------------------- work folder and STATE.md
+
+WORK_RE = re.compile(r"^\s*work\s*:\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
+FEATURE_RE = re.compile(r"^(\d+)(-\S+)?$")
+
+
+def work_dir(config_path: str) -> str:
+    """The `work:` folder of a `.home-office.yml` (absolute), else the config's folder."""
+    base = os.path.dirname(os.path.abspath(config_path))
+    try:
+        with open(config_path, encoding="utf-8") as fh:
+            m = WORK_RE.search(fh.read())
+        if m:
+            return os.path.normpath(os.path.join(base, m.group(1)))
+    except Exception:
+        pass
+    return base
+
+
+def feature_state(task: str, start: str):
+    """STATE.md of the feature a TASK belongs to ("NN-name / TASK n"), found from the
+    `.home-office.yml` at or above `start`. None for short-lane and task runs."""
+    feature = (task or "").split("/")[0].strip()
+    m = FEATURE_RE.match(feature)
+    config = find_up(start, ".home-office.yml") if m else None
+    if not config:
+        return None
+    features = os.path.join(work_dir(config), "features")
+    try:
+        names = sorted(os.listdir(features))
+    except OSError:
+        return None
+    for name in names:
+        if name == feature or (name.startswith(m.group(1) + "-") and name.startswith(feature)):
+            path = os.path.join(features, name, "STATE.md")
+            return path if os.path.isfile(path) else None
+    return None
+
+
+# Header line that counts the TASKs that went back. Found by label, else by being the only
+# header line whose value is a bare number (documents may be translated); a missing line is
+# added after the third header line (Branches), as in the template.
+REWORK_LABELS = {"rework", "vueltas atrás", "vueltas atras", "retrabajo", "reintentos",
+                 "repetición de trabajo"}
+COUNT_RE = re.compile(r"^(?P<label>[^:\r\n]{1,40}?)\s*:\s*(?P<n>\d+)(?P<rest>(?:\s.*)?)$")
+
+
+def bump_rework(path: str) -> int:
+    """Add 1 to the rework line of a STATE.md header and return the new count."""
+    with open(path, encoding="utf-8", newline="") as fh:
+        text = fh.read()
+    lines = text.splitlines(keepends=True)
+    eol = "\r\n" if "\r\n" in text else "\n"
+    start, end = 0, len(lines)
+    for i, line in enumerate(lines):
+        bare = line.lstrip("﻿")
+        if bare.startswith("## "):
+            end = i
+            break
+        if bare.startswith("# ") and start == 0:
+            start = i + 1
+    header = [i for i in range(start, end) if lines[i].strip()]
+
+    def parse(i):
+        return COUNT_RE.match(lines[i].rstrip("\r\n").strip())
+
+    found = next((i for i in header if parse(i) and
+                  parse(i).group("label").strip("*-_ ").lower() in REWORK_LABELS), None)
+    if found is None:
+        found = next((i for i in header if parse(i)), None)
+    if found is None:
+        at = header[2] + 1 if len(header) >= 3 else (header[-1] + 1 if header else start)
+        if at > 0 and not lines[at - 1].endswith(("\n", "\r")):
+            lines[at - 1] += eol
+        lines.insert(at, f"Rework: 1{eol}")
+        count = 1
+    else:
+        line = lines[found]
+        body = line.rstrip("\r\n")
+        m = COUNT_RE.match(body.strip())
+        count = int(m.group("n")) + 1
+        indent = body[:len(body) - len(body.lstrip())]
+        lines[found] = (f"{indent}{m.group('label')}: {count}{m.group('rest')}"
+                        f"{line[len(body):]}")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        fh.write("".join(lines))
+    os.replace(tmp, path)
+    return count

@@ -34,7 +34,7 @@ From a local clone: `/plugin marketplace add <path to the clone>`.
 | `/home-office:language [lang]` | Show or change the language of the project's documents |
 | `/home-office:stream [new "<goal>" \| next <stream>]` | Streams: parallel long-running lines of work (e.g. a new app) made of features in sequence; list them, create one with a roadmap, or start its next feature |
 | `/home-office:project [<repo> [add "<idea>"]]` | Projects (one per repo): list them with counts, show a project page, or add a backlog idea; `new`, `task` and `stream new` take `--project <repo>`, `status <repo>` filters by it |
-| `/home-office:task "<job>"` | One self-contained check, cleanup or mechanical change, even across repos; no SPEC or PLAN, ends in the same session |
+| `/home-office:task "<job>"` | One self-contained check, cleanup or mechanical change, even across repos; no SPEC or PLAN, ends in the same session. Long jobs (a watcher, a server) run as one step per session with a hand-over note in `jobs/<name>.md` |
 
 Open sessions in the folder that contains `.home-office.yml`.
 
