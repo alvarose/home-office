@@ -28,7 +28,9 @@ If it is empty, ask what the user wants to do and stop.
 
 Launch the `classifier` agent (model from `roles.classifier`) with the request, the repos and their roles, and the path of each source's index. Show its answer in one line: "Lane: feature (touches api and web). Say 'short' to change it."
 
-If the user overrides, follow the user. If the request is clearly a one-off check or cleanup across repos with nothing to design, say in one line that `/home-office:task "<request>"` fits better and let the user choose.
+If the user overrides, follow the user. If the classifier says `lane: task`, or the request is clearly a one-off check or cleanup across repos with nothing to design, say in one line that `/home-office:task "<request>"` fits better and let the user choose (default: task).
+
+**Minor fixes stay small.** Findings from an audit or a review, cleanups and style fixes go to the short lane or to `task`, never to the feature lane, unless one of them changes a contract or a schema (the classifier applies this; do not override it on your own). A long list of them runs as several short-lane changes or tasks, one per repo or per group of related fixes; anything left for later goes to the project's Backlog. Only the user can send minor fixes to the feature lane, and then the feature limit (`limits.tasks_per_feature`) still applies.
 
 ## 1b. Project
 
@@ -42,7 +44,7 @@ Every piece of work belongs to a **project** (one per repo; see "Projects" in `$
    (`--deny` from the `guards` that apply to this repo; `--prepare` from its `prepare`; `--check` from its `checks`; no `--file`. `--delete` only for files or folders the request clearly says to remove, by exact path, after confirming the list with the user.)
 2. Launch `home-office:implementer` (model from the role that matches the repo, else `roles.backend`). Its prompt starts with the line `HOME-OFFICE-WORKTREE: <repo>`, then: the request, the relevant knowledge sections (from the index), `hard_rules`, the paths it may delete (if any), the prepare commands and checks, and the limit of ~5 files.
 3. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-end --worktree <repo>` and read `gate` and `touched`. `fail`, `blocked` or `needs-plan-change` → tell the user (it may have outgrown the short lane; offer to restart it as a feature).
-4. Launch `home-office:reviewer` on the uncommitted diff of that repo. Show `git -C <repo> diff --stat` and the review → **gate 3**: wait for the user.
+4. Launch `home-office:reviewer` on the uncommitted diff of that repo (one round, as in "Review → gate 3" below). Show `git -C <repo> diff --stat` and the review → **gate 3**: wait for the user. Fix only high and medium findings the user approves; low ones go as one line to the project's Backlog, not into this change, unless the user asks.
 5. Propose a commit message → **gate 4**: the user commits. Give the commands as `git -C <repo> …` (see `close`): the session runs in the work folder.
 6. Append one line to `<work>/<log>`: date, project, repo, what was done; also add it to the project's "Tasks done" in its `project.md`. Done.
 
@@ -59,10 +61,14 @@ Every piece of work belongs to a **project** (one per repo; see "Projects" in `$
 Launch `explorer` (`roles.explorer`) with the request, the brief template path and the destination `features/NN-name/brief.md`. Show its three-line summary and the link to the brief (see "Links to documents").
 
 ### SPEC → gate 1
-Launch `architect` (`roles.architect`) in mode `spec`, with the brief, the template and, if any, the batch's `DECISIONS.md` and the stream's `stream.md` (its shared decisions and roadmap; raise only what is new). Show the user the SPEC's goal, scope and **decisions needed** (with the architect's recommendations). **Wait for explicit approval.** Record the user's choices in the feature's `DECISIONS.md` and mark the SPEC approved with the date. If the user changes something, relaunch the architect in mode `spec` with the changes.
+Launch `architect` (`roles.architect`) in mode `spec`, with the brief, the template, `limits.tasks_per_feature` (default 8) and `limits.tasks_per_session`, and, if any, the batch's `DECISIONS.md` and the stream's `stream.md` (its shared decisions and roadmap; raise only what is new). Show the user the SPEC's goal, **what it unblocks**, its **size** (`Estimate:` — e.g. "~6 TASKs in 3 sessions, limit 8"; say so when it is over the limit), scope and **decisions needed** (with the architect's recommendations). **Wait for explicit approval.** Record the user's choices in the feature's `DECISIONS.md` and mark the SPEC approved with the date. If the user changes something, relaunch the architect in mode `spec` with the changes.
 
 ### PLAN + TASKS → gate 2
-Launch `architect` in mode `plan` with the approved SPEC, the brief, the board and the templates. Show: the approach, the layers and repos, the contract in short, crossings, and the list of TASKs (title, repo, role, number of files, files to delete). **Wait for explicit approval.**
+Launch `architect` in mode `plan` with the approved SPEC, the brief, the board, the templates and `limits.tasks_per_feature` (default 8). Show: the approach, the layers and repos, the contract in short, crossings, and the list of TASKs (title, repo, role, number of files, files to delete).
+
+**Over the limit.** If the architect's first line says more TASKs than `limits.tasks_per_feature`, say it **before** asking for gate 2, with the numbers and its proposal, e.g. "14 TASKs, limit 8. The architect proposes splitting: TASKs 1–7 now (delivers …), the rest as a new feature." Let the user choose: **trim** or **split** (relaunch the architect in mode `plan` with that choice; what is left out goes as one line each to the Backlog of `<work>/projects/<repo>/project.md`, never to a hidden TASK), or **keep it** (only on the user's explicit word; record it in `DECISIONS.md`). Never ask for gate 2 on an over-limit PLAN without saying so.
+
+**Wait for explicit approval.**
 
 ### Planned cut after gate 2
 This session ends here; execution always starts in a fresh one. The conversation now holds the brief, SPEC and PLAN, and execution needs that room.
@@ -103,7 +109,14 @@ For each TASK in order (respect `layers` and `Depends on`), reading from `TASKS.
 8. **Planned cut.** After `limits.tasks_per_session` TASKs in this session, stop even if the context looks fine. First settle step 5's commits (with `ask`, the one question; the SHAs go to `STATE.md` "Done"). Then make sure `STATE.md` says "TASK x of y" and names the next TASK (or "review" if they are all done), update the board's row, and hand over (see "Handing over") with the line: "Continue in a new session with `/home-office:resume NN-name`."
 
 ### Review → gate 3
-Launch `reviewer` (`roles.reviewer`) on the feature branches against each repo's base (`base`, else `base_branch`) in every repo touched. If any changed path matches `risk_zones`, also launch `deep-reviewer` (`roles.deep-reviewer`). Write their findings to `features/NN-name/REVIEW.md` from the template (one dated section per review round, newest first, in `language`; the reviewers are read-only, so you write it from their reports). Show `git diff --stat` per repo, the findings by severity and the link to `REVIEW.md`. **Wait for the user.** Fixes go back through executors as new TASKs.
+A **round** is one pass of `reviewer`, plus `deep-reviewer` when it applies. Count the rounds already done from the sections of `features/NN-name/REVIEW.md` (one per round), if it exists.
+
+1. **Round 1.** Launch `reviewer` (`roles.reviewer`) on the feature branches against each repo's base (`base`, else `base_branch`) in every repo touched. If any changed path matches `risk_zones`, also launch `deep-reviewer` (`roles.deep-reviewer`). Tell both the round number and that only high and medium findings (critical too, for the deep reviewer) lead to fixes.
+2. **REVIEW.md.** Write their findings to `features/NN-name/REVIEW.md` from the template (one dated section per round, newest first, in `language`; the reviewers are read-only, so you write it from their reports). Low findings are written there and nowhere else in the feature.
+3. **Low findings go to the backlog.** If the round has low findings, add one line to the Backlog of `<work>/projects/<repo>/project.md` (create the page from the template if missing): `- Low review findings of NN-name (<n>) — features/NN-name/REVIEW.md`. They **never** become TASKs, fixes or another round, unless the user asks for it in so many words.
+4. **Gate 3.** Show `git diff --stat` per repo, the findings by severity (low ones as a count: "4 low, recorded in REVIEW.md and the backlog") and the link to `REVIEW.md`. **Wait for the user.**
+5. **Fixes.** Only high and medium findings, and only those the user approves, go back through executors as new TASKs appended to `TASKS.md` (as few as possible); say the new total against `limits.tasks_per_feature` if it goes over.
+6. **More rounds.** The feature gets `limits.review_rounds` rounds (default 1). After that, one more round runs **only** if the last one had high or medium findings, once their fixes are done, and it reviews **only the fixes** (the commits since that round), not the whole diff again. A round with no high or medium findings ends the review: go to close.
 
 ### Close → gate 4
 Run the `close` procedure (`/home-office:close`).

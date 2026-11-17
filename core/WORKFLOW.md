@@ -35,15 +35,24 @@ A classifier decides; the user can override with one word.
 - **Short lane**: small fix, small change, question. One implementer subagent, no SPEC or plan. Still goes through review, diff and commit (gates 3 and 4) and leaves one line in `log.md`.
 - **Task** (`/home-office:task`, chosen by the user): one self-contained job — a check, a cleanup, a mechanical change — across any number of repos, with no design. One subagent per repo (the explorer for read-only checks), a results table, one line in `log.md`, and the session ends. Anything that needs decisions goes to the feature lane.
 - **Feature lane**: anything that touches more than one repo, changes a contract or schema, or is estimated at more than ~5 files.
+- **Minor fixes** (findings from an audit or a review, cleanups, style) go to the short lane or to a task by default, even across repos or over ~5 files, unless one of them changes a contract or a schema. A long list runs as several short changes or tasks; what waits goes to the project's backlog. Only the user can send them to the feature lane.
+
+## Keeping features small
+
+A feature that grows unchecked costs more sessions, more review and more rework than it saves. Three limits keep it in check:
+
+- **Size at gate 1.** The SPEC's header says what the feature **unblocks** (or "nothing on its own") and its **estimate**: TASKs and sessions. The user sees the size when approving it. If the estimate is over `limits.tasks_per_feature`, the SPEC carries a decision: trim or split.
+- **TASKs per feature** (`limits.tasks_per_feature`, default 8). If the PLAN needs more, the architect proposes trimming or splitting, and the conductor tells the user, with the number, before asking for gate 2. Keeping an over-limit PLAN is the user's explicit choice, recorded in `DECISIONS.md`. What is trimmed or split off goes to the project's backlog.
+- **Review rounds** (`limits.review_rounds`, default 1). One round of review. Another one runs only to check the fixes of high or medium findings, and reviews only those fixes. Low findings are written to `REVIEW.md` and as one line in the project's backlog (`projects/<repo>/project.md`); they never become TASKs or another round unless the user asks.
 
 ## Feature lane
 
 0. **Entry** (`new`): the session opened in the work folder becomes the **conductor** (cheap model: the work folder's `.claude/settings.json` makes it the default for new terminal CLI sessions there; in the Claude desktop app, pick it in the model picker). It launches every other role as a subagent and keeps only their summaries.
 1. **Explore**: the explorer (cheap model) writes `brief.md`: repos, files, knowledge sections, risks, open questions.
-2. **Specify and plan**: the architect (strong model, subagent) writes `SPEC.md` → **gate 1**; then `PLAN.md` (contract between layers, "Crossings" if another in-flight feature touches the same repos) and `TASKS.md` → **gate 2**. **Planned cut**: the session writes `STATE.md` and ends; execution starts in a new session (`resume`).
+2. **Specify and plan**: the architect (strong model, subagent) writes `SPEC.md`, with what it unblocks and its estimated size → **gate 1**; then `PLAN.md` (contract between layers, "Crossings" if another in-flight feature touches the same repos) and `TASKS.md`, within `tasks_per_feature` or with a proposal to trim or split → **gate 2**. **Planned cut**: the session writes `STATE.md` and ends; execution starts in a new session (`resume`).
 3. **Execute**: one fresh subagent per TASK, inside the feature's branch/worktree of that repo, in layer order. Only the files listed in the TASK, plus deleting the files in its `Delete:` list. The repo's `prepare` commands (e.g. code generators) run before its checks on every TASK, and the checks must pass. Two attempts at most; then stop and ask. A TASK that passes is committed on the feature branch (one question per session, or automatically with `commit: auto`), so work never sits uncommitted across sessions. Each session executes at most `tasks_per_session` TASKs, then writes `STATE.md` and hands over to a new one. The conductor keeps only each report's status line and never rereads the SPEC or PLAN in full: subagents read them by path.
 4. **Interactive tuning** (optional): the only session opened directly in a repo (browser, emulator, simulator, editor). Max 10 tuning requests or the context cap, then close and reopen.
-5. **Review**: reviewer on the diff against the knowledge sources; deep reviewer (strong model) only when the diff touches a risk zone. The conductor writes their findings to `REVIEW.md` → **gate 3**.
+5. **Review**: reviewer on the diff against the knowledge sources; deep reviewer (strong model) only when the diff touches a risk zone. The conductor writes their findings to `REVIEW.md` → **gate 3**. `review_rounds` rounds (default 1), one more only to check fixes of high or medium findings; low findings go to the backlog.
 
 Whenever a step writes or updates a document, the conductor ends its message with clickable links to it (brief, SPEC, PLAN, TASKS, STATE, REVIEW, DECISIONS), so the user can read it without searching.
 6. **Close** (`close`): `STATE.md`, decisions, board, commit message proposals → **gate 4: the user commits and merges**. Worktrees and branches are cleaned up after the merge.
@@ -57,6 +66,8 @@ Six header lines (status, last session, branches, rework count, stream, project)
 - Context cap per session: 150,000 tokens → close and start a new session instead of compacting.
 - TASKs per conductor session: 2 → then a planned cut, before the context fills up. In the Claude desktop app the next session is proposed as a card, or started on its own with `handover: auto` when nothing waits for the user. The planning session (brief, SPEC, PLAN) also ends at gate 2. Real use shows a conductor's context holds about SPEC + PLAN + two TASKs.
 - Finished sessions (Claude desktop app only): after a hand-over, `resume` archives the previous session of the feature if idle; `close` archives the feature's other idle sessions when it is done, and offers to archive itself last. `archive: ask` (default) asks once; `auto` does not. A parent with other children still in use is never archived (archiving cascades to idle side sessions).
+- TASKs per feature: 8 (`tasks_per_feature`) → over it, trim or split before gate 2 (see "Keeping features small").
+- Review rounds: 1 (`review_rounds`) → one more only to check fixes of high or medium findings.
 - Tuning: 10 requests per session.
 - Attempts per TASK: 2.
 - Parallel features: no limit, warning from 4.

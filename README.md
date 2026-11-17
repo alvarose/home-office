@@ -47,6 +47,15 @@ Open sessions in the folder that contains `.home-office.yml`.
 
 The workflow's rules are enforced by hooks inside active task worktrees: edits outside the TASK's file list or forbidden by the project's `guards` are blocked (deletions only for the files the TASK lists under `Delete:`), an executor cannot finish with failing checks (after the repo's `prepare` commands, e.g. code generators), and sessions are told to close when they reach the context cap. Conductor sessions are also cut on purpose: after the PLAN is approved and after every `limits.tasks_per_session` TASKs (default 2), continuing with `/home-office:resume`. See [`core/WORKFLOW.md`](core/WORKFLOW.md#guards-hooks).
 
+## Keeping features small
+
+- The SPEC says what the feature unblocks and how many TASKs and sessions it should take, so you see its size at gate 1.
+- `limits.tasks_per_feature` (default 8): a PLAN over it comes with a proposal to trim or split, and you are told the number before gate 2.
+- `limits.review_rounds` (default 1): one review round; another only to check fixes of high or medium findings. Low findings go to `REVIEW.md` and the project's backlog, never to new TASKs unless you ask.
+- Minor fixes (audit findings, cleanups, style) go to the short lane or `/home-office:task`, not to a feature, unless they change a contract or a schema.
+
+See [`core/WORKFLOW.md`](core/WORKFLOW.md#keeping-features-small).
+
 ## Language
 
 The plugin itself is written in English. The documents it writes for a project (SPEC, PLAN, TASKS, STATE, board, log, knowledge cards) use that project's `language`: `init` proposes the language you write in, and `/home-office:language` changes it at any time. See [`core/WORKFLOW.md`](core/WORKFLOW.md#language).

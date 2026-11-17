@@ -23,7 +23,7 @@ Follow `new` § 0 (`${CLAUDE_PLUGIN_ROOT}/skills/new/SKILL.md`): config in the c
 
 ## 1. Scope
 - List the repos it applies to: the ones the request names, or the `--project` repo when given, or every repo in `repos` when it says "all" or names none. You may run read-only commands yourself only to list or locate (`ls`, `git -C <repo> status`, `rg`).
-- **Not a task?** If it needs design decisions, a contract or schema change, or real feature work, say so in one line and offer `/home-office:new "<request>"` instead. Never do feature work here.
+- **Not a task?** If it needs design decisions, a contract or schema change, or real feature work, say so in one line and offer `/home-office:new "<request>"` instead. Never do feature work here. Minor fixes (from an audit or a review, cleanups, style) **are** tasks, even across many repos, unless one changes a contract or a schema: do them here, not as a feature.
 - Say in one line what you will do and in which repos, then go on.
 
 ## 2. Do it
