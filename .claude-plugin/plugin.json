@@ -1,6 +1,6 @@
 {
   "name": "home-office",
-  "version": "0.4.0-pre.25",
+  "version": "0.4.0-pre.26",
   "description": "A tool-agnostic way of working with coding agents: plan with a strong model, execute with cheaper ones, keep state in files, keep sessions short.",
   "author": {
     "name": "Álvaro Serrano"

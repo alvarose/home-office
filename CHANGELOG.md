@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0-pre.26 — 2026-11-17
 - Fast worktrees: cloning a `link` folder (`vendor`, `node_modules`) skips symlinks and Windows junctions inside it (e.g. path repositories, `node_modules/.bin`) instead of following them or failing on them.
 
 ## 0.4.0-pre.25 — 2026-11-17
