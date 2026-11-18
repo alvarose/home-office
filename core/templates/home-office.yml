@@ -21,8 +21,11 @@ repos:                        # each repo: path, roles, checks (must pass to clo
                               # advisories (e.g. composer audit): run after the checks, never block, their
                               # output goes to REVIEW.md and the backlog; keep audits out of `checks`.
                               # Formatters go in `prepare`, limited to changed files (vendor/bin/pint --dirty,
-                              # ./gradlew ktlintFormat): they fix style before the checks run
-  app: { path: ., roles: [backend, frontend], checks: [], advisories: [], copy: [], setup: [], prepare: [] }
+                              # ./gradlew ktlintFormat): they fix style before the checks run;
+                              # hotspots: [globs] of hot files that only one feature at a time may edit
+                              # (e.g. phpstan-baseline.neon, **/values*/strings.xml, lock files, shared config);
+                              # task-start refuses a TASK that lists one another feature holds
+  app: { path: ., roles: [backend, frontend], checks: [], advisories: [], copy: [], setup: [], prepare: [], hotspots: [] }
 
 layers: [backend, frontend]   # execution order inside a feature
 base_branch: main             # default base for every repo; a repo can set its own `base`

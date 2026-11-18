@@ -13,6 +13,11 @@
               feature's STATE.md. Called again, it repeats the last TASK's result.
   check       run one check command in a worktree through the result cache: the same command on
               the same tree state (any edit changes it) is answered from the cache, never rerun
+  claims      list the file claims of the open TASKs of a repo (all its worktrees), as JSON;
+              task-start records them and reports overlaps with other features (`conflicts`),
+              and refuses a hotspot another feature holds (`--hotspot`, unless --force)
+  sync        merge the base branch into a feature worktree, early, only when it is clean and
+              no TASK is open: up_to_date | merged | conflict (aborted, nothing changed)
   waiting     the waiting inbox <work>/waiting.md: add | answer | acted | list | stats (ids and
               timestamps are deterministic; answered rows are kept, they are the measurement)
   context     print the context size of a session transcript (debugging)
@@ -46,8 +51,8 @@ from datetime import datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
 from _common import (bump_rework, changed_files, evaluate_task, feature_state,  # noqa: E402
-                     find_up, git, git_dir, last_context_tokens, load_scope, run_cached_check,
-                     run_check, save_scope, scope_path, snapshot, work_dir)
+                     find_up, git, git_dir, last_context_tokens, load_scope, matches,
+                     run_cached_check, run_check, save_scope, scope_path, snapshot, work_dir)
 
 
 def out(obj: dict, code: int = 0) -> None:
@@ -210,6 +215,16 @@ def cmd_task_start(a) -> None:
     if current and current.get("gate") not in ("pass", "fail") and not a.force:
         out({"ok": False, "error": f"another task is active here: {current.get('task')}. "
                                    f"Run task-end first, or pass --force."}, 1)
+    feature = feature_of(wt, a.task)
+    claimed = [f.replace("\\", "/") for f in (a.file or []) + (a.allow or []) + (a.delete or [])]
+    conflicts = find_conflicts(wt, feature, claimed, a.hotspot or [], a.base) if claimed else []
+    held = [c for c in conflicts if c.get("hotspot")]
+    if held and not a.force:
+        out({"ok": False, "error": "hotspot held by another feature: " + "; ".join(
+                 f"{c['file']} ({c['feature']}" + (f", {c['task']}" if c.get("task") else ", unmerged branch") + ")"
+                 for c in held),
+             "hotspots_held": held, "conflicts": conflicts,
+             "hint": "do other independent TASKs first, or file a wait; --force overrides"}, 1)
     links, reinstalled = load_links(wt), []
     listed = [f.replace("\\", "/") for f in (a.file or []) + (a.delete or [])]
     for folder in list(links):
@@ -246,7 +261,15 @@ def cmd_task_start(a) -> None:
         "gate_blocks": 0,
     }
     save_scope(wt, scope)
-    out({"ok": True, "task": a.task, "worktree": wt, "files": scope["files"],
+    if claimed:
+        try:
+            add_claim(wt, {"feature": feature, "task": a.task, "worktree": wt,
+                           "files": scope["files"] + scope["allow"], "delete": scope["delete"],
+                           "since": time.strftime("%Y-%m-%d %H:%M")})
+        except Exception:  # claims are advice: never lose the TASK over them
+            pass
+    out({"ok": True, "task": a.task, "worktree": wt, "feature": feature, "conflicts": conflicts,
+         "files": scope["files"],
          "delete": scope["delete"], "deny": scope["deny"], "prepare": scope["prepare"],
          "checks": scope["checks"], "advisory": scope["advisory"],
          "gate_seconds": scope["gate_seconds"], "linked": links, "reinstalled": reinstalled,
@@ -328,6 +351,7 @@ def cmd_task_end(a) -> None:
                  "note": "no TASK was ever opened in this worktree"})
         rework = record_rework(last, a.report)
         save_last(wt, last)
+        release_claims(wt)  # nothing is open here: drop any claim a crash left behind
         out({"ok": True, **{k: last.get(k) for k in last if k not in EXTRA}, "active": False,
              "note": "no TASK open: this is the result of the last one, already closed",
              "gate_by": last.get("gate_by"), "report": last.get("report"), "rework": rework})
@@ -351,6 +375,7 @@ def cmd_task_end(a) -> None:
             os.remove(scope_path(wt))
         except OSError:
             pass
+        release_claims(wt, scope.get("task"))
     save_last(wt, {**summary(scope), **{k: scope.get(k) for k in EXTRA}})
     out({"ok": True, **summary(scope), "active": bool(a.keep), "gate_by": scope["gate_by"],
          "report": scope.get("report"), "rework": rework})
@@ -417,6 +442,7 @@ def cmd_worktree_remove(a) -> None:
                  "hint": "if only ignored files or submodules are left, retry with --force"}, 1)
         removed = True
     git(repo, "worktree", "prune")
+    released = release_claims(dest, git_at=repo)
 
     branch_deleted = False
     if a.delete_branch:
@@ -425,7 +451,258 @@ def cmd_worktree_remove(a) -> None:
             out({"ok": False, "worktree_removed": removed, "error": (res.stderr or res.stdout).strip()}, 1)
         branch_deleted = True
     out({"ok": True, "worktree": dest, "worktree_removed": removed, "branch": branch,
-         "branch_deleted": branch_deleted})
+         "branch_deleted": branch_deleted, "claims_released": released})
+
+
+# ---------------------------------------------------------------- file claims
+# Every open TASK claims its closed file list (and delete list) in <common git dir>/
+# home-office-claims.json, shared by all worktrees of the repo. task-start reports overlaps with
+# other features and refuses a hotspot another feature holds; task-end and worktree-remove release.
+
+CLAIMS_FILE = "home-office-claims.json"
+
+
+def rp(path: str) -> str:
+    return os.path.normcase(os.path.realpath(path))
+
+
+def common_dir(wt: str):
+    res = git(wt, "rev-parse", "--git-common-dir")
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    return os.path.realpath(os.path.join(wt, res.stdout.strip()))
+
+
+def claims_path(wt: str):
+    cd = common_dir(wt)
+    return os.path.join(cd, CLAIMS_FILE) if cd else None
+
+
+def worktree_paths(wt: str) -> list:
+    listed = git(wt, "worktree", "list", "--porcelain").stdout
+    return [rp(line[9:].strip()) for line in listed.splitlines() if line.startswith("worktree ")]
+
+
+def feature_of(wt: str, task: str) -> str:
+    """The feature a TASK belongs to: its branch `feature/NN-name`, else the `NN-name /` of its label."""
+    branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if branch.startswith("feature/"):
+        return branch[len("feature/"):]
+    m = re.match(r"^\s*(\d+-[^\s/]+)\s*/", task or "")
+    return m.group(1) if m else (task or branch or "unknown")
+
+
+class ClaimsLock:
+    """Tiny lock around read-modify-write of the claims file. Fail-open after ~2 s."""
+
+    def __init__(self, path):
+        self.path, self.fd = (path + ".lock") if path else None, None
+
+    def __enter__(self):
+        if not self.path:
+            return self
+        for _ in range(40):
+            try:
+                self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                break
+            except FileExistsError:
+                try:  # a lock older than 30 s belongs to a crashed process
+                    if time.time() - os.path.getmtime(self.path) > 30:
+                        os.remove(self.path)
+                        continue
+                except OSError:
+                    pass
+                time.sleep(0.05)
+            except OSError:
+                break
+        return self
+
+    def __exit__(self, *exc):
+        if self.fd is not None:
+            os.close(self.fd)
+            try:
+                os.remove(self.path)
+            except OSError:
+                pass
+
+
+def read_claims(path) -> list:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return [c for c in data if isinstance(c, dict)]
+    except Exception:
+        return []
+
+
+def write_claims(path, claims: list) -> None:
+    if not path:
+        return
+    if not claims:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(claims, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def live_claims(wt: str):
+    """(claims of the repo, how many stale ones were dropped). Stale: the worktree is gone."""
+    path = claims_path(wt)
+    claims = read_claims(path)
+    alive = set(worktree_paths(wt))
+    keep = [c for c in claims if c.get("worktree") and os.path.isdir(c["worktree"]) and rp(c["worktree"]) in alive]
+    dropped = len(claims) - len(keep)
+    if dropped:
+        with ClaimsLock(path):
+            write_claims(path, [c for c in read_claims(path) if c in keep])
+    return keep, dropped
+
+
+def add_claim(wt: str, claim: dict) -> None:
+    """Record a TASK's claim (replacing an older claim of the same worktree and task)."""
+    path = claims_path(wt)
+    if not path:
+        return
+    with ClaimsLock(path):
+        claims = [c for c in read_claims(path)
+                  if not (c.get("worktree") and rp(c["worktree"]) == rp(wt) and c.get("task") == claim["task"])]
+        write_claims(path, claims + [claim])
+
+
+def release_claims(wt: str, task=None, git_at=None) -> int:
+    """Drop the claims of one TASK (task given) or of the whole worktree. Returns how many.
+    `git_at`: a path of the repo to find the claims file from (the worktree may be gone)."""
+    path = claims_path(git_at or wt)
+    if not path:
+        return 0
+    me = rp(wt)
+    with ClaimsLock(path):
+        claims = read_claims(path)
+        keep = [c for c in claims if not (c.get("worktree") and rp(c["worktree"]) == me
+                                          and (task is None or c.get("task") == task))]
+        if len(keep) != len(claims):
+            write_claims(path, keep)
+    return len(claims) - len(keep)
+
+
+def glob_hit(rel: str, pat: str) -> bool:
+    """matches(), where a leading `**/` also matches the repo root (`**/strings.xml` ~ `strings.xml`)."""
+    pats = [pat]
+    if pat.startswith("**/"):
+        pats.append(pat[3:])
+    return matches(rel, pats)
+
+
+def overlaps(a: str, b: str) -> bool:
+    a, b = a.replace("\\", "/").strip("/"), b.replace("\\", "/").strip("/")
+    return a == b or glob_hit(a, b) or glob_hit(b, a)
+
+
+def claim_entries(claim: dict) -> list:
+    """Patterns a claim holds: its files, its delete list, and what a deleted folder covers."""
+    pats = list(claim.get("files") or [])
+    for d in claim.get("delete") or []:
+        pats += [d, d.rstrip("/") + "/**"]
+    return pats
+
+
+def branch_claims(wt: str, base, own_feature: str) -> list:
+    """Unmerged feature branches of the repo, as claims of the files they changed against `base`."""
+    if not base:
+        return []
+    res = git(wt, "for-each-ref", "--format=%(refname:short)\t%(committerdate:iso-strict)", "refs/heads/feature/")
+    found = []
+    for line in res.stdout.splitlines():
+        branch, _, when = line.partition("\t")
+        feat = branch[len("feature/"):]
+        if not branch or feat == own_feature:
+            continue
+        if git(wt, "merge-base", "--is-ancestor", branch, base).returncode == 0:
+            continue  # merged
+        diff = git(wt, "diff", "--name-only", f"{base}...{branch}")
+        files = [f.strip() for f in diff.stdout.splitlines() if f.strip()]
+        if diff.returncode == 0 and files:
+            found.append({"feature": feat, "task": None, "worktree": None, "branch": branch,
+                          "files": files, "delete": [], "since": when or None, "source": "branch"})
+    return found
+
+
+def find_conflicts(wt: str, feature: str, files: list, hotspots: list, base) -> list:
+    """Overlaps of `files` with the claims of other features (open TASKs and unmerged branches)."""
+    claims, _ = live_claims(wt)
+    others = [c for c in claims if c.get("feature") != feature] + branch_claims(wt, base, feature)
+    found, seen = [], set()
+    for f in files:
+        hot = any(overlaps(f, h) for h in hotspots)
+        for c in others:
+            if any(overlaps(f, p) for p in claim_entries(c)):
+                key = (f, c.get("feature"), c.get("task"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                item = {"file": f, "feature": c.get("feature"), "task": c.get("task"),
+                        "since": c.get("since"), "source": c.get("source", "task")}
+                if hot:
+                    item["hotspot"] = True
+                found.append(item)
+    return found
+
+
+def cmd_claims(a) -> None:
+    repo = os.path.abspath(a.repo)
+    if not common_dir(repo):
+        out({"ok": False, "error": f"not a git repository: {repo}"}, 1)
+    claims, dropped = live_claims(repo)
+    branches = branch_claims(repo, a.base, "") if a.base else []
+    out({"ok": True, "repo": repo, "file": claims_path(repo), "dropped_stale": dropped,
+         "claims": claims, "branches": branches})
+
+
+def cmd_sync(a) -> None:
+    wt = os.path.abspath(a.worktree)
+    if not git_dir(wt):
+        out({"ok": False, "status": "error", "error": f"not a git worktree: {wt}"}, 1)
+    branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    head = git(wt, "rev-parse", "HEAD").stdout.strip()
+    base_sha = git(wt, "rev-parse", "--verify", "--quiet", f"{a.base}^{{commit}}").stdout.strip()
+    res = {"worktree": wt, "branch": branch, "base": a.base}
+
+    def refuse(reason, msg, **extra):
+        out({"ok": False, "status": "refused", "reason": reason, "message": msg, **res, **extra}, 1)
+
+    if not base_sha:
+        out({"ok": False, "status": "error", "error": f"base branch not found: {a.base}", **res}, 1)
+    if branch in ("HEAD", a.base):
+        refuse("not_a_feature_branch", f"HEAD is {branch}: sync only runs on a feature branch")
+    if load_scope(wt):
+        refuse("task_open", "a TASK is open in this worktree; close it with task-end first")
+    dirty = changed_files(wt)
+    if dirty:
+        refuse("dirty", "uncommitted changes in the worktree; commit them first", changes=dirty[:30])
+    if git(wt, "merge-base", "--is-ancestor", base_sha, head).returncode == 0:
+        out({"ok": True, "status": "up_to_date", "head": head, **res})
+    merged = git(wt, "merge", "--no-edit", base_sha)
+    if merged.returncode == 0:
+        new = git(wt, "rev-parse", "HEAD").stdout.strip()
+        files = [f for f in git(wt, "diff", "--name-only", f"{head}..{new}").stdout.splitlines() if f]
+        out({"ok": True, "status": "merged", "head_before": head, "head": new,
+             "fast_forward": git(wt, "rev-parse", "--verify", "--quiet", "HEAD^2").returncode != 0,
+             "files": files, **res})
+    conflicts = [f for f in git(wt, "diff", "--name-only", "--diff-filter=U").stdout.splitlines() if f]
+    if git(wt, "merge", "--abort").returncode != 0:  # no merge in progress: nothing to abort
+        git(wt, "reset", "--merge")
+    after = git(wt, "rev-parse", "HEAD").stdout.strip()
+    clean = not changed_files(wt)
+    if not conflicts:
+        out({"ok": False, "status": "error", "error": (merged.stderr or merged.stdout).strip(),
+             "head": after, "clean": clean, **res}, 1)
+    out({"ok": False, "status": "conflict", "files": conflicts, "aborted": True,
+         "head": after, "unchanged": after == head and clean, **res}, 1)
 
 
 # ---------------------------------------------------------------- waiting inbox
@@ -692,6 +969,11 @@ def main() -> None:
     s.add_argument("--ignore", action="append",
                    help="glob of generated files that never count as changed (repeat; common "
                         "build and test artifacts are ignored already)")
+    s.add_argument("--hotspot", action="append",
+                   help="glob of a hot file (the repo's `hotspots`): only one feature edits it at a "
+                        "time; refused while another feature holds it, unless --force (repeat)")
+    s.add_argument("--base", help="the repo's base branch: unmerged feature branches then count as "
+                                  "claims of the files they changed")
     s.add_argument("--attempts", type=int, default=2)
     s.add_argument("--check-timeout", type=int, default=1200)
     s.add_argument("--force", action="store_true")
@@ -716,6 +998,16 @@ def main() -> None:
                    help="kept for compatibility: when no checks gate ran, task-end now always runs "
                         "prepare, the scope check and the checks itself")
     e.set_defaults(fn=cmd_task_end)
+
+    cl = sub.add_parser("claims", help="the file claims of a repo's open TASKs, as JSON")
+    cl.add_argument("--repo", required=True, help="the repo or any of its worktrees")
+    cl.add_argument("--base", help="also list unmerged feature branches (files changed against this base)")
+    cl.set_defaults(fn=cmd_claims)
+
+    sy = sub.add_parser("sync", help="merge the base into a clean feature worktree with no open TASK")
+    sy.add_argument("--worktree", required=True)
+    sy.add_argument("--base", required=True, help="the repo's base branch")
+    sy.set_defaults(fn=cmd_sync)
 
     k = sub.add_parser("check", help="run one check through the worktree's result cache")
     k.add_argument("--worktree", required=True)

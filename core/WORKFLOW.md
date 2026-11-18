@@ -96,14 +96,24 @@ A session opened in the work folder without a home-office command (a conversatio
 - Tuning: 10 requests per session.
 - Attempts per TASK: 2.
 - Checks gate time cap: 540 s (`gate_seconds`) → `gate: timeout`, finished by `task-end`.
-- Parallel features: no limit, warning from 4.
+- Parallel features: no limit, warning from 4 (see "Parallel features" for claims, hotspots and early sync).
 
 ## Parallel work
 
 - Branch `feature/NN-name` in every repo the feature touches, each in its own worktree.
-- Base branch per project; `close` proposes merges in layer order; the user merges.
+- Base branch per project; `close` proposes merges in layer order; the user merges. Parallel features in one repo claim files and share hotspots, and sync the base early (see "Parallel features").
 - Shared packages (declared in config): with several features in flight, the first one ready publishes; the others update to that version before publishing theirs.
 - **Batches**: the same kind of change across many repos. Each repo is a feature; the solutions chosen per rule are recorded once in the batch's `DECISIONS.md` and reused.
+
+## Parallel features
+
+With several features in flight in one repo, the same few files collide on merge. In the pilot's last month, 27 pairs of features were active at once in the same repo (up to 4), and 10 merges had real conflicts, always in hot files: static-analysis baselines, string resources, shared test files, config, the project page. A PLAN's "Crossings" section said who goes first, but nothing enforced it, and the base was merged into a feature branch only right before its merge. Three mechanisms, all deterministic in `ho.py`:
+
+1. **File claims.** `task-start` records the TASK's closed file list (and its delete list) as claims of its feature in `home-office-claims.json`, in the repo's **common** git dir (`git rev-parse --git-common-dir`), so every worktree of the repo sees them: `feature`, `task`, `worktree`, `files`, `delete`, `since`. If a file is already claimed by **another** feature's open TASK, or changed by another feature's unmerged branch (`--base <repo base>` turns on that part), `task-start` does not block: it returns `conflicts: [{file, feature, task, since, source}]` (`source`: `task` or `branch`). The conductor says them in one line and follows the PLAN's crossing (who goes first), or asks. `task-end` releases the TASK's claim, `worktree-remove` the whole worktree's, and a claim whose worktree is gone is dropped by itself. Claims are advice, never a lock on the filesystem: the scope guard is unchanged.
+2. **Hotspots.** `hotspots: [globs]` per repo in `.home-office.yml` (baselines, string resources, lock files, shared config, shared test files). A hotspot is edited by **one feature at a time**: `task-start --hotspot <glob>` (the conductor passes the repo's list) for a TASK that lists a hotspot another feature holds returns `ok: false` with who holds it (`hotspots_held`) and opens nothing, unless `--force`. The conductor then orders the work: other independent TASKs first, a row in the waiting inbox for this one ("wait for 04-x to merge"), and a retry in the next session. The architect names every hotspot a TASK touches (PLAN "Crossings", `Hotspots:` in `TASKS.md`) and puts such TASKs as late as possible and small.
+3. **Early sync.** `ho.py sync --worktree <wt> --base <repo base>` merges the base branch into the feature branch **only if** the worktree is clean and no TASK is open there (otherwise `refused`, with the reason). It answers `up_to_date`, `merged` (with the files the base brought) or `conflict`: then it runs `git merge --abort`, leaves HEAD and the files exactly as they were, and lists the conflicting files. It never pushes and never rebases. `resume` runs it for every worktree of the feature at the start of a session, once the previous session's commits are in; `close` runs it once more before proposing merges. A conflict becomes a TASK proposal or a waiting row, never a manual fix by the conductor.
+
+**Reading `ho.py claims --repo <repo> [--base <base>]`**: JSON with `claims` (one per open TASK: feature, task, worktree, files, since), `branches` (with `--base`: unmerged feature branches and the files they changed against it) and `dropped_stale` (claims removed because their worktree is gone). A file or glob that appears under two features is a crossing; one that matches a `hotspots` glob is a hotspot held by that feature until its TASK ends (or, for a branch, until it is merged). An old `since` on a claim means a TASK nobody closed.
 
 ## Streams
 

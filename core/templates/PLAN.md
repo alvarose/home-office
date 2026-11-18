@@ -12,7 +12,7 @@ Status: draft | approved (<date>) · SPEC approved on <date>
 <API routes, payloads, props, events, DTOs, scenes… with types and errors>
 
 ## Crossings
-<other in-flight features touching the same repos: shared files, who goes first; "none" if none>
+<other in-flight features touching the same repos: shared files, who goes first; "none" if none. Name every hotspot (the repo's `hotspots`) a TASK touches, and who holds it: only one feature edits a hotspot at a time. `ho.py claims --repo <repo>` shows what is claimed now>
 
 ## Shared packages
 <version to publish, or "none">

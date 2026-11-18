@@ -7,6 +7,7 @@ Each TASK is self-contained. An executor reads only its TASK, the contract and t
 - Branch: feature/NN-name
 - Depends on: —
 - Waits: — (or what this TASK needs from the user: a decision, a push, a staging check…)
+- Hotspots: — (or the hot file of the repo's `hotspots` this TASK touches; such TASKs go late and stay small)
 - Files (closed list): `<path>`, `<path>`
 - Delete: — (or `<path>`, `<path>`: what this TASK removes; exact file or folder paths, no globs)
 - Read: `<source>/<file>#<section>`; PLAN § Contract

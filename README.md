@@ -40,6 +40,8 @@ Open sessions in the folder that contains `.home-office.yml`.
 
 Everything that waits on you (decisions, pushes, merges, staging checks) is kept in `<work>/waiting.md` with timestamps, and work goes on with whatever does not depend on it; see ["Waits"](core/WORKFLOW.md#waits). `ho.py waiting stats` measures it.
 
+Parallel features in the same repo claim their files (`ho.py claims`), edit each hotspot (`hotspots` in the config) one feature at a time, and merge the base into their branch early (`ho.py sync`); see ["Parallel features"](core/WORKFLOW.md#parallel-features).
+
 ## Requirements
 
 - `git` and Python 3.8+ available as `python3` (the guards and the helper script use only the standard library).
