@@ -13,6 +13,8 @@
               feature's STATE.md. Called again, it repeats the last TASK's result.
   check       run one check command in a worktree through the result cache: the same command on
               the same tree state (any edit changes it) is answered from the cache, never rerun
+  waiting     the waiting inbox <work>/waiting.md: add | answer | acted | list | stats (ids and
+              timestamps are deterministic; answered rows are kept, they are the measurement)
   context     print the context size of a session transcript (debugging)
 
 Usage examples (paths are absolute):
@@ -31,17 +33,21 @@ All commands print one JSON object on stdout.
 
 import argparse
 import json
+import math
 import os
+import re
 import shutil
 import stat
 import sys
+import statistics
 import time
+from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
 from _common import (bump_rework, changed_files, evaluate_task, feature_state,  # noqa: E402
-                     git, git_dir, last_context_tokens, load_scope, run_cached_check,
-                     run_check, save_scope, scope_path, snapshot)
+                     find_up, git, git_dir, last_context_tokens, load_scope, run_cached_check,
+                     run_check, save_scope, scope_path, snapshot, work_dir)
 
 
 def out(obj: dict, code: int = 0) -> None:
@@ -422,6 +428,219 @@ def cmd_worktree_remove(a) -> None:
          "branch_deleted": branch_deleted})
 
 
+# ---------------------------------------------------------------- waiting inbox
+# <work>/waiting.md: one row per thing that waits on the user. Two tables, found by position
+# (the headings may be translated): Open, then Answered. Answered rows are never deleted.
+
+WAIT_KINDS = ("decision", "push", "merge", "deploy-check", "env", "data", "other")
+WAIT_OPEN = ("id", "since", "project", "work", "kind", "action", "blocks")
+WAIT_DONE = WAIT_OPEN + ("answered", "answer", "acted")
+TS_FMT = "%Y-%m-%d %H:%M"
+WAIT_TEMPLATE = os.path.join(os.path.dirname(HERE), "core", "templates", "waiting.md")
+
+
+def wait_now(a) -> datetime:
+    if getattr(a, "now", None):
+        try:
+            return datetime.strptime(a.now, TS_FMT)
+        except ValueError:
+            out({"ok": False, "error": f"--now must be 'YYYY-MM-DD HH:MM', got {a.now!r}"}, 1)
+    return datetime.now().replace(second=0, microsecond=0)
+
+
+def wait_file(a) -> str:
+    config = os.path.abspath(a.config) if getattr(a, "config", None) else find_up(os.getcwd(), ".home-office.yml")
+    if not config or not os.path.isfile(config):
+        out({"ok": False, "error": "no .home-office.yml found (run from the work folder or pass --config)"}, 1)
+    return os.path.join(work_dir(config), "waiting.md")
+
+
+def split_row(line: str) -> list:
+    s = line.strip()
+    s = s[1:] if s.startswith("|") else s
+    if s.endswith("|") and not s.endswith("\\|"):
+        s = s[:-1]
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s)]
+
+
+def cell(text) -> str:
+    return " ".join(str(text or "").split()).replace("|", "\\|")
+
+
+def parse_waiting(text: str) -> dict:
+    """Prelude lines, then per `## ` section: heading, table header, separator, rows (dicts)."""
+    prelude, tables, cur = [], [], None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            cur = {"heading": line, "header": None, "sep": None, "rows": []}
+            tables.append(cur)
+        elif cur is None:
+            prelude.append(line)
+        elif line.strip().startswith("|"):
+            if cur["header"] is None:
+                cur["header"] = line.strip()
+            elif cur["sep"] is None:
+                cur["sep"] = line.strip()
+            else:
+                fields = WAIT_OPEN if len(tables) == 1 else WAIT_DONE
+                cells = split_row(line)
+                row = dict(zip(fields, cells + [""] * (len(fields) - len(cells))))
+                if row.get("id"):
+                    cur["rows"].append(row)
+    return {"prelude": prelude, "tables": tables}
+
+
+def load_waiting(path: str) -> dict:
+    with open(WAIT_TEMPLATE, encoding="utf-8") as fh:
+        defaults = parse_waiting(fh.read())
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as fh:
+            data = parse_waiting(fh.read())
+    else:
+        data = defaults
+    for i in range(2):
+        if len(data["tables"]) <= i:
+            data["tables"].append({**defaults["tables"][i], "rows": []})
+        for key in ("header", "sep"):
+            data["tables"][i][key] = data["tables"][i][key] or defaults["tables"][i][key]
+    return data
+
+
+def save_waiting(path: str, data: dict) -> None:
+    lines = list(data["prelude"])
+    while lines and not lines[-1].strip():
+        lines.pop()
+    for t, fields in zip(data["tables"], (WAIT_OPEN, WAIT_DONE)):
+        lines += ["", t["heading"], "", t["header"], t["sep"]]
+        lines += ["| " + " | ".join(cell(r.get(f)) for f in fields) + " |" for r in t["rows"]]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines).lstrip("\n") + "\n")
+
+
+def parse_ts(text):
+    try:
+        return datetime.strptime((text or "").strip(), TS_FMT)
+    except ValueError:
+        return None
+
+
+def age_text(hours: float) -> str:
+    return f"{int(hours // 24)} d" if hours >= 24 else f"{int(hours)} h"
+
+
+def wait_view(row: dict, state: str, now: datetime) -> dict:
+    """The row plus `state` and its age (open) or wait time (answered), in hours."""
+    since = parse_ts(row.get("since"))
+    end = now if state == "open" else parse_ts(row.get("answered"))
+    hours = round((end - since).total_seconds() / 3600, 1) if since and end else None
+    view = {**row, "state": state}
+    if state == "open":
+        view["age_hours"] = hours
+        view["age"] = age_text(hours) if hours is not None else None
+    else:
+        view["wait_hours"] = hours
+        view["unacted"] = not row.get("acted")
+    return view
+
+
+def wait_rows(data: dict, a, now: datetime) -> list:
+    rows = [wait_view(r, "open", now) for r in data["tables"][0]["rows"]] + \
+           [wait_view(r, "answered", now) for r in data["tables"][1]["rows"]]
+    for key in ("project", "kind"):
+        val = getattr(a, key, None)
+        if val:
+            rows = [r for r in rows if r.get(key, "").lower() == val.lower()]
+    if getattr(a, "feature", None):
+        rows = [r for r in rows if r.get("work", "").startswith(a.feature)]
+    if getattr(a, "since", None):
+        rows = [r for r in rows if r.get("since", "")[:10] >= a.since]
+    return rows
+
+
+def pctl(values: list, p: float):
+    """Nearest-rank percentile (p in 0..1)."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(p * len(ordered)) - 1)]
+
+
+def wait_stats(xs: list) -> dict:
+    return {"median_hours": round(statistics.median(xs), 1) if xs else None, "p90_hours": pctl(xs, 0.9)}
+
+
+def cmd_waiting(a) -> None:
+    path, now = wait_file(a), wait_now(a)
+    data = load_waiting(path)
+    op = a.op
+    if op == "add":
+        if a.kind not in WAIT_KINDS:
+            out({"ok": False, "error": f"--kind must be one of {', '.join(WAIT_KINDS)}"}, 1)
+        since = a.since or now.strftime(TS_FMT)
+        if not parse_ts(since):
+            out({"ok": False, "error": f"--since must be 'YYYY-MM-DD HH:MM', got {since!r}"}, 1)
+        nums = [int(r["id"][2:]) for t in data["tables"] for r in t["rows"] if re.match(r"^W-\d+$", r["id"])]
+        row = {"id": f"W-{max(nums, default=0) + 1:03d}", "since": since, "project": a.project or "",
+               "work": a.work or "", "kind": a.kind, "action": a.action, "blocks": a.blocks or "nothing else"}
+        data["tables"][0]["rows"].append(row)
+        save_waiting(path, data)
+        out({"ok": True, "op": "add", "file": path, "row": wait_view(row, "open", now)})
+    if op in ("answer", "acted"):
+        wid = a.id.upper()
+        if op == "answer":
+            if a.at and not parse_ts(a.at):
+                out({"ok": False, "error": f"--at must be 'YYYY-MM-DD HH:MM', got {a.at!r}"}, 1)
+            rows = data["tables"][0]["rows"]
+            row = next((r for r in rows if r["id"] == wid), None)
+            if not row:
+                done = any(r["id"] == wid for r in data["tables"][1]["rows"])
+                out({"ok": False, "error": f"{wid} is " + ("already answered" if done else "not in the inbox")}, 1)
+            rows.remove(row)
+            row = {**row, "answered": a.at or now.strftime(TS_FMT), "answer": a.answer, "acted": ""}
+            data["tables"][1]["rows"].insert(0, row)
+        else:
+            row = next((r for r in data["tables"][1]["rows"] if r["id"] == wid), None)
+            if not row:
+                out({"ok": False, "error": f"{wid} is not an answered row"}, 1)
+            row["acted"] = now.strftime(TS_FMT)
+        save_waiting(path, data)
+        out({"ok": True, "op": op, "file": path, "row": wait_view(row, "answered", now)})
+    rows = wait_rows(data, a, now)
+    if op == "list":
+        shown = [r for r in rows if a.state == "all" or r["state"] == a.state or
+                 (a.state == "unacted" and r["state"] == "answered" and r["unacted"])]
+        groups = {}
+        for r in shown:
+            if r["state"] != "open":
+                continue
+            g = groups.setdefault(r["kind"], {"count": 0, "oldest_hours": 0, "oldest": "0 h"})
+            g["count"] += 1
+            if (r["age_hours"] or 0) >= g["oldest_hours"]:
+                g["oldest_hours"], g["oldest"] = r["age_hours"] or 0, r["age"] or "0 h"
+        out({"ok": True, "op": "list", "file": path, "now": now.strftime(TS_FMT), "state": a.state,
+             "count": len(shown), "by_kind": groups, "rows": shown})
+    answered = [r for r in rows if r["state"] == "answered"]
+    opened = [r for r in rows if r["state"] == "open"]
+    by_kind = {}
+    for k in WAIT_KINDS:
+        waits = [r["wait_hours"] for r in answered if r["kind"] == k and r["wait_hours"] is not None]
+        n_open = sum(1 for r in opened if r["kind"] == k)
+        if waits or n_open or any(r["kind"] == k for r in answered):
+            n_ans = sum(1 for r in answered if r["kind"] == k)
+            by_kind[k] = {"total": n_ans + n_open, "open": n_open, "answered": n_ans, **wait_stats(waits)}
+    buckets = {"<1 d": 0, "1-3 d": 0, "3-7 d": 0, ">7 d": 0}
+    for r in opened:
+        d = (r["age_hours"] or 0) / 24
+        buckets["<1 d" if d < 1 else "1-3 d" if d < 3 else "3-7 d" if d < 7 else ">7 d"] += 1
+    oldest = max(opened, key=lambda r: r["age_hours"] or 0, default=None)
+    out({"ok": True, "op": "stats", "file": path, "now": now.strftime(TS_FMT), "since": a.since,
+         "total": len(rows), "open": len(opened), "answered": len(answered),
+         "wait": wait_stats([r["wait_hours"] for r in answered if r["wait_hours"] is not None]),
+         "by_kind": by_kind, "open_by_age": buckets,
+         "oldest_open": {"id": oldest["id"], "age_hours": oldest["age_hours"], "age": oldest["age"]} if oldest else None})
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="ho.py", description="home-office conductor helper")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -505,6 +724,34 @@ def main() -> None:
     k.add_argument("--tail", type=int, default=40, help="lines of output to keep")
     k.add_argument("--no-cache", action="store_true", help="run it even if a passing result is cached")
     k.set_defaults(fn=cmd_check)
+
+    wt = sub.add_parser("waiting", help="the waiting inbox <work>/waiting.md: add | answer | acted | list | stats")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
+    common.add_argument("--now", help="'YYYY-MM-DD HH:MM' instead of the clock (tests)")
+    ws = wt.add_subparsers(dest="op", required=True)
+    x = ws.add_parser("add", parents=[common], help="add a row for something that waits on the user")
+    x.add_argument("--kind", required=True, choices=WAIT_KINDS)
+    x.add_argument("--action", required=True, help="the exact question or action (git commands as git -C <repo> ...)")
+    x.add_argument("--project")
+    x.add_argument("--work", help="'NN-name / TASK n' or the step")
+    x.add_argument("--blocks", help="what it blocks; default 'nothing else'")
+    x.add_argument("--since", help="override the timestamp (default: now)")
+    x = ws.add_parser("answer", parents=[common], help="record the user's answer and move the row to Answered")
+    x.add_argument("id")
+    x.add_argument("answer")
+    x.add_argument("--at", help="override the timestamp (default: now)")
+    x = ws.add_parser("acted", parents=[common], help="mark an answered row as acted on")
+    x.add_argument("id")
+    x = ws.add_parser("list", parents=[common], help="rows as JSON, with age and counts by kind")
+    x.add_argument("--state", choices=["open", "answered", "unacted", "all"], default="open")
+    y = ws.add_parser("stats", parents=[common], help="count by kind, median and p90 wait, open rows by age")
+    for x in (ws.choices["list"], y):
+        x.add_argument("--project")
+        x.add_argument("--kind", choices=WAIT_KINDS)
+        x.add_argument("--feature", help="only rows whose work starts with this, e.g. 07-x")
+        x.add_argument("--since", help="only rows that started on or after YYYY-MM-DD")
+    wt.set_defaults(fn=cmd_waiting)
 
     c = sub.add_parser("context")
     c.add_argument("--transcript", required=True)

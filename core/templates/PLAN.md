@@ -17,5 +17,8 @@ Status: draft | approved (<date>) · SPEC approved on <date>
 ## Shared packages
 <version to publish, or "none">
 
+## Waits
+<every step that needs the user: pushes, merges, staging checks, decisions, environment, data. One line each: what, when it comes up (after which TASK), and whether independent TASKs can go on meanwhile; "none" if none>
+
 ## Risks
 -

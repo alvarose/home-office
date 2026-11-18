@@ -28,7 +28,7 @@ From a local clone: `/plugin marketplace add <path to the clone>`.
 | `/home-office:new "<task>"` | Start new work; a classifier picks the short lane or the feature lane |
 | `/home-office:resume [NN]` | Resume a feature in a fresh session from its `STATE.md` (`--tuning` for interactive tuning) |
 | `/home-office:close` | Write the handoff, decisions and board; propose commits and merges |
-| `/home-office:status` | Features in flight, gates, blockers, stalled work |
+| `/home-office:status` | Waiting-for-you block first (by kind, with age and the exact action; answer several at once), then features in flight, gates, blockers, stalled work |
 | `/home-office:models` | Show or change the tool and model of each department |
 | `/home-office:sources` | List, add, edit or remove knowledge sources |
 | `/home-office:language [lang]` | Show or change the language of the project's documents |
@@ -37,6 +37,8 @@ From a local clone: `/plugin marketplace add <path to the clone>`.
 | `/home-office:task "<job>"` | One self-contained check, cleanup or mechanical change, even across repos; no SPEC or PLAN, ends in the same session. Long jobs (a watcher, a server) run as one step per session with a hand-over note in `jobs/<name>.md` |
 
 Open sessions in the folder that contains `.home-office.yml`.
+
+Everything that waits on you (decisions, pushes, merges, staging checks) is kept in `<work>/waiting.md` with timestamps, and work goes on with whatever does not depend on it; see ["Waits"](core/WORKFLOW.md#waits). `ho.py waiting stats` measures it.
 
 ## Requirements
 

@@ -13,7 +13,7 @@ The cost of an agent grows with *number of calls × context size*. Short session
 
 ## Two pieces per project
 
-- **Work** (`docs/work/` in a compact project, a separate repo in a multi-repo project): the board, features, streams, batches, log.
+- **Work** (`docs/work/` in a compact project, a separate repo in a multi-repo project): the board, features, streams, batches, log, the waiting inbox.
 - **Knowledge** (`docs/knowledge/` or one or more separate sources): short cards per repo, an `INDEX.md`, architecture, rules.
 
 ## Language
@@ -38,6 +38,19 @@ A classifier decides; the user can override with one word.
 - **Feature lane**: anything that touches more than one repo, changes a contract or schema, or is estimated at more than ~5 files.
 - **Minor fixes** (findings from an audit or a review, cleanups, style) go to the short lane or to a task by default, even across repos or over ~5 files, unless one of them changes a contract or a schema. A long list runs as several short changes or tasks; what waits goes to the project's backlog. Only the user can send them to the feature lane.
 
+## Waits
+
+Most stalls are things waiting for the user: a decision, a push, a merge, a check on staging, an environment, data. In the pilot's last month the "Next" of 44 of 79 features named the user, 20 hand-overs sat for more than 4 h (the longest 71 h), and nothing recorded when something started waiting or when it was answered. Four rules:
+
+1. **One inbox: `<work>/waiting.md`** (template `waiting.md`, in `language`). One row per thing that waits on the user: `id` (W-NNN), `since` (date and time), project, work (feature and TASK), kind (`decision` / `push` / `merge` / `deploy-check` / `env` / `data` / `other`), the exact question or action (git commands as `git -C <repo> …`), and what it blocks (a TASK or step, or "nothing else"). When the user answers: `answered` (date and time), the answer and `acted` (when a session carried it out). Nobody writes the table by hand: `ho.py waiting add | answer | acted | list | stats` keeps ids and timestamps. An answered row moves to "Answered" and is **never deleted**: those rows are the measurement.
+2. **Plan around waits.** The PLAN has a "Waits" section listing every step that needs the user. TASKs are ordered so independent work comes first; one that needs the user is last or isolated, and carries `Waits: <what>` in `TASKS.md`.
+3. **A wait is not a stop.** When a TASK or step needs the user, the conductor files a row, says it in one line, and **continues with the next TASK that does not depend on it**. It cuts or hands over only when nothing independent is left (or at the `tasks_per_session` budget). `STATE.md` "Blocked" lists the waiting ids. Pushes, merges and deploys are never done by the agent: it files the exact command.
+4. **Answering.** The user answers in chat; the session that hears it runs `ho.py waiting answer`. Any conductor session (`resume`, `close`) first acts on the answered rows of its feature that nobody has acted on (`acted` empty). `status` shows a "Waiting for you" block at the top, grouped by kind with counts and age ("3 pushes · oldest 2 d"), each row with its exact action, and offers to answer several at once ("approve these 3 pushes?"). That block replaces "waiting for the user" in the list of next commands.
+
+**Hand-over `auto`**: the next session is started when its first step is independent of every open wait, even if the feature has open rows; it is only proposed as a card when the next step itself waits for the user.
+
+**Reading the numbers.** `ho.py waiting stats [--since YYYY-MM-DD] [--project <repo>] [--kind <kind>]` prints JSON: totals, the count by kind (open and answered), the median and p90 wait in hours (answered rows: `answered − since`), and the open rows by age (`<1 d`, `1-3 d`, `3-7 d`, `>7 d`) with the oldest. Read it by kind: a high p90 for `push` means pushes pile up (batch them: "approve these 3 pushes?"); for `decision`, the SPEC or PLAN left questions open; for `deploy-check`, a check that could be moved earlier. A rising "open by age" with a low median means a few rows are forgotten, not that the user is slow.
+
 ## Keeping features small
 
 A feature that grows unchecked costs more sessions, more review and more rework than it saves. Three limits keep it in check:
@@ -60,7 +73,7 @@ Whenever a step writes or updates a document, the conductor ends its message wit
 
 ## STATE.md
 
-Six header lines (status, last session, branches, rework count, stream, project) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read.
+Six header lines (status, last session, branches, rework count, stream, project) and four sections (done, next, blocked/open questions, decisions this session). About 20 lines. It is the only thing `resume` needs to read. "Blocked" lists the feature's open waiting ids (`W-007: push hub`); the detail lives in `waiting.md`.
 
 The rework count is written by `ho.py task-end`, not by the conductor: each TASK that goes back (its gate fails, or its executor reports `blocked` or `needs-plan-change`) adds 1, once per TASK. A `STATE.md` without the line gets it after the branches line; a translated label is found by being the header line with a bare number.
 
@@ -76,7 +89,7 @@ A session opened in the work folder without a home-office command (a conversatio
 
 - Context cap per session: 150,000 tokens → close and start a new session instead of compacting.
 - Loose sessions: 12 hours (`loose_session_hours`) → one warning to hand over to a new session.
-- TASKs per conductor session: 2 → then a planned cut, before the context fills up. In the Claude desktop app the next session is proposed as a card, or started on its own with `handover: auto` when nothing waits for the user. The planning session (brief, SPEC, PLAN) also ends at gate 2. Real use shows a conductor's context holds about SPEC + PLAN + two TASKs.
+- TASKs per conductor session: 2 → then a planned cut, before the context fills up. In the Claude desktop app the next session is proposed as a card, or started on its own with `handover: auto` when its first step is independent of every open wait (see "Waits"). A wait alone never cuts a session: independent TASKs go first. The planning session (brief, SPEC, PLAN) also ends at gate 2. Real use shows a conductor's context holds about SPEC + PLAN + two TASKs.
 - Finished sessions (Claude desktop app only): after a hand-over, `resume` archives the previous session of the feature if idle; `close` archives the feature's other idle sessions when it is done, and offers to archive itself last. `archive: ask` (default) asks once; `auto` does not. A parent with other children still in use is never archived (archiving cascades to idle side sessions).
 - TASKs per feature: 8 (`tasks_per_feature`) → over it, trim or split before gate 2 (see "Keeping features small").
 - Review rounds: 1 (`review_rounds`) → one more only to check fixes of high or medium findings.
