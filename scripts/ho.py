@@ -11,6 +11,8 @@
               checks gate ran, e.g. delegated tools) and the touched files, remove the scope file,
               and count rework (gate fail, or --report blocked / needs-plan-change) in the
               feature's STATE.md. Called again, it repeats the last TASK's result.
+  check       run one check command in a worktree through the result cache: the same command on
+              the same tree state (any edit changes it) is answered from the cache, never rerun
   context     print the context size of a session transcript (debugging)
 
 Usage examples (paths are absolute):
@@ -38,8 +40,8 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
 from _common import (bump_rework, changed_files, evaluate_task, feature_state,  # noqa: E402
-                     git, git_dir, last_context_tokens, load_scope, run_check, save_scope,
-                     scope_path, snapshot)
+                     git, git_dir, last_context_tokens, load_scope, run_cached_check,
+                     run_check, save_scope, scope_path, snapshot)
 
 
 def out(obj: dict, code: int = 0) -> None:
@@ -352,6 +354,16 @@ def cmd_task_end(a) -> None:
 EXTRA = ("state", "report", "gate_by", "rework_count", "rework_reason")
 
 
+def cmd_check(a) -> None:
+    wt = os.path.abspath(a.worktree)
+    if not git_dir(wt):
+        out({"ok": False, "error": f"not a git worktree: {wt}"}, 1)
+    res = run_cached_check(wt, a.cmd, timeout=a.timeout, tail=a.tail, use_cache=not a.no_cache)
+    out({"ok": res["ok"], "cached": res["cached"], "cmd": a.cmd.strip(), "seconds": res["seconds"],
+         "ran_seconds": res.get("ran_seconds"), "at": res.get("at"), "timed_out": res["timed_out"],
+         "tail": res["tail"]}, 0 if res["ok"] else 1)
+
+
 def cmd_context(a) -> None:
     out({"ok": True, "tokens": last_context_tokens(a.transcript)})
 
@@ -485,6 +497,14 @@ def main() -> None:
                    help="kept for compatibility: when no checks gate ran, task-end now always runs "
                         "prepare, the scope check and the checks itself")
     e.set_defaults(fn=cmd_task_end)
+
+    k = sub.add_parser("check", help="run one check through the worktree's result cache")
+    k.add_argument("--worktree", required=True)
+    k.add_argument("--cmd", required=True, help="the check command, exactly as the repo's `checks` lists it")
+    k.add_argument("--timeout", type=int, default=1200)
+    k.add_argument("--tail", type=int, default=40, help="lines of output to keep")
+    k.add_argument("--no-cache", action="store_true", help="run it even if a passing result is cached")
+    k.set_defaults(fn=cmd_check)
 
     c = sub.add_parser("context")
     c.add_argument("--transcript", required=True)

@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -322,6 +323,108 @@ def run_check(cmd: str, cwd: str, timeout: float = 1200, tail: int = 40):
     return ok, text
 
 
+# ---------------------------------------------------------------- check cache
+
+CHECKS_CACHE = "home-office-checks.json"
+CACHE_KEEP = 60
+
+
+def tree_state(worktree: str):
+    """Hash of the worktree's content: `git write-tree` of a temporary index that holds the
+    working tree (tracked changes and untracked files that are not ignored). Any edit, new
+    file or deletion changes it; the real index is never touched. None when git cannot say."""
+    gd = git_dir(worktree)
+    if not gd:
+        return None
+    tmp = os.path.join(gd, f"home-office-index-{os.getpid()}")
+    env = dict(os.environ, GIT_INDEX_FILE=tmp)
+
+    def run_git(*args):
+        return subprocess.run(["git", "-C", worktree, *args], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", env=env)
+    try:
+        real = os.path.join(gd, "index")
+        if os.path.isfile(real):
+            shutil.copyfile(real, tmp)  # keeps git's stat cache: unchanged files are not rehashed
+        else:
+            run_git("read-tree", "HEAD")  # fails on an unborn branch: the index then starts empty
+        if run_git("add", "-A").returncode != 0:
+            return None
+        res = run_git("write-tree")
+        return (res.stdout.strip() or None) if res.returncode == 0 else None
+    except Exception:
+        return None
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+def _cache_file(worktree: str):
+    gd = git_dir(worktree)
+    return os.path.join(gd, CHECKS_CACHE) if gd else None
+
+
+def _load_cache(worktree: str) -> dict:
+    try:
+        with open(_cache_file(worktree), encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_cache(worktree: str, cache: dict) -> None:
+    path = _cache_file(worktree)
+    if not path:
+        return
+    if len(cache) > CACHE_KEEP:
+        keep = sorted(cache.items(), key=lambda kv: kv[1].get("at_epoch", 0))[-CACHE_KEEP:]
+        cache = dict(keep)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cache, fh, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+def run_cached_check(worktree: str, cmd: str, timeout: float = 1200, tail: int = 40,
+                     use_cache: bool = True) -> dict:
+    """Run one check through the result cache of the worktree.
+
+    The key is (command, tree state): any change to the files invalidates it, and each
+    worktree keeps its own entries in its private git dir. Only passes are cached; a failure
+    always runs again. Fail-open: if the tree state cannot be computed, the check just runs.
+    Returns {ok, cached, tail, seconds, timed_out, tree, at}."""
+    started = time.monotonic()
+    cmd = cmd.strip()
+    tree = tree_state(worktree) if use_cache else None
+    key = hashlib.sha256(f"{cmd}\0{tree}".encode("utf-8")).hexdigest() if tree else None
+    if key:
+        entry = _load_cache(worktree).get(key)
+        if entry and entry.get("ok") and entry.get("cmd") == cmd and entry.get("tree") == tree:
+            return {"ok": True, "cached": True, "tail": entry.get("tail", ""),
+                    "seconds": round(time.monotonic() - started, 3),
+                    "ran_seconds": entry.get("seconds"), "timed_out": False, "tree": tree,
+                    "at": entry.get("at")}
+    ok, text, timed_out = run_check_ex(cmd, worktree, timeout=timeout, tail=tail)
+    seconds = round(time.monotonic() - started, 2)
+    at = time.strftime("%Y-%m-%d %H:%M:%S")
+    if ok and key:
+        cache = _load_cache(worktree)
+        cache[key] = {"cmd": cmd, "tree": tree, "ok": True, "tail": text, "seconds": seconds,
+                      "at": at, "at_epoch": time.time()}
+        _save_cache(worktree, cache)
+    return {"ok": ok, "cached": False, "tail": text, "seconds": seconds,
+            "timed_out": timed_out, "tree": tree, "at": at}
+
+
 # ---------------------------------------------------------------- task evaluation
 
 def run_prepare(worktree: str, scope: dict, run):
@@ -383,13 +486,19 @@ def evaluate_task(worktree: str, scope: dict, budget=None) -> list:
     finish inside it, `scope["gate_timeout"]` says which and nothing is reported as a
     problem for it: the caller leaves the evaluation to `task-end`, which has no cap and
     does not repeat the checks that already passed (`scope["checks_passed"]`).
+
+    Checks go through the worktree's result cache (`run_cached_check`): one that already
+    passed on this exact tree, e.g. run by the executor, is not run again.
     """
     timeout = int(scope.get("check_timeout") or 1200)
     deadline = time.monotonic() + budget if budget else None
     redo = set(scope.get("checks_passed") or []) if scope.get("gate") == "timeout" else set()
     scope.pop("gate_timeout", None)
 
-    def run(cmd, cap=timeout, soft=False):
+    last = {}
+
+    def run(cmd, cap=timeout, soft=False, cached=False):
+        last.clear()
         left = cap
         if deadline is not None:
             left = min(cap, deadline - time.monotonic())
@@ -398,7 +507,12 @@ def evaluate_task(worktree: str, scope: dict, budget=None) -> list:
                     scope["gate_timeout"] = {"command": cmd, "seconds": int(budget),
                                              "note": "not started: no time left"}
                 return False, f"not run: the gate's {int(budget)}s cap was reached", True
-        ok, tail, expired = run_check_ex(cmd, worktree, timeout=left)
+        if cached:
+            res = run_cached_check(worktree, cmd, timeout=left)
+            ok, tail, expired = res["ok"], res["tail"], res["timed_out"]
+            last.update(cached=res["cached"], seconds=res["seconds"])
+        else:
+            ok, tail, expired = run_check_ex(cmd, worktree, timeout=left)
         hit = expired and deadline is not None and left < cap
         if hit and not soft:
             scope["gate_timeout"] = {"command": cmd, "seconds": int(budget)}
@@ -430,11 +544,11 @@ def evaluate_task(worktree: str, scope: dict, budget=None) -> list:
                                 "skipped": "passed before the gate timed out"})
                 passed.append(cmd)
                 continue
-            ok, tail, hit = run(cmd)
+            ok, tail, hit = run(cmd, cached=True)
             if hit:
                 results.append({"check": cmd, "ok": None, "timeout": True})
                 break
-            results.append({"check": cmd, "ok": ok})
+            results.append({"check": cmd, "ok": ok, **({"cached": True} if last.get("cached") else {})})
             if ok:
                 passed.append(cmd)
             else:

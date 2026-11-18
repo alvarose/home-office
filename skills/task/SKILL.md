@@ -40,7 +40,7 @@ Follow `new` § 0 (`${CLAUDE_PLUGIN_ROOT}/skills/new/SKILL.md`): config in the c
 2. Open an open-scope task, as in the short lane: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-start --worktree <repo> --task "task: <name>" --deny "<glob>=<reason>"… [--prepare "<cmd>"]… --check "<cmd>"… [--advisory "<cmd>"]… --attempts <limits.task_attempts> --gate-seconds <limits.gate_seconds>`. Report the `advisories` of the result in your summary and, when one found something, add one line to the project's Backlog.
    - `--deny` comes from the `guards` that apply to the repo.
    - `--delete` is only for paths the request names, after confirming the list with the user.
-3. Launch `home-office:implementer` (model from the role that matches the repo, else `roles.backend`). The first line of its prompt is `HOME-OFFICE-WORKTREE: <repo>`; then give it the change, the relevant knowledge sections, `hard_rules`, the paths it may delete, and the prepare commands and checks.
+3. Launch `home-office:implementer` (model from the role that matches the repo, else `roles.backend`). The first line of its prompt is `HOME-OFFICE-WORKTREE: <repo>`; then give it the change, the relevant knowledge sections, `hard_rules`, the paths it may delete, the prepare commands and checks, and the check command line `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" check --worktree <repo> --cmd "<check>"` (path resolved): full checks only through it, filtered tests while iterating.
 4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-end --worktree <repo> --report <the implementer's status>` and keep `gate` (always `pass` or `fail`), `touched` and `problems`.
 
 Mechanical changes are made in the repo's current checkout, like the short lane: no feature branch and no worktree.

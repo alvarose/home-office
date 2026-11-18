@@ -14,7 +14,8 @@ Rules:
 - Edit **only** the files listed in the TASK (in the short lane: only what the request needs, at most ~5 files). If you need more, or a contract must change, stop and report `needs-plan-change`.
 - The stack, build tools and conventions come from the knowledge sections you are given (Kotlin, Swift, KMP, Unity, Godot, web…). Do not assume.
 - Respect every `hard_rules` entry the conductor passes you.
-- Run the checks, after the prepare commands if the conductor gives you any (they regenerate code; never edit their output). If they fail, fix within your files and run them again. Do not loosen tests or checks.
+- **Validation while you work: filtered tests only.** Iterate with the narrowest tests that cover your change (one file, one class, `--filter <name>`), never the whole suite. The **full** checks run once, when you are done, and only through the check command the conductor gives you (`python3 "<ho.py>" check --worktree <worktree> --cmd "<check>"`): it caches a pass for the exact state of the files, so the checks gate right after you does not run them again. Never run a full check by hand with its bare command, and rerun it only after you change files.
+- When you are done run the checks, after the prepare commands if the conductor gives you any (they regenerate code; never edit their output). If they fail, fix within your files and run them again. Do not loosen tests or checks.
 - Never commit, push, merge, rebase or create branches.
 - When you finish, a checks gate runs the TASK's checks and compares the files you changed with the list. If it sends problems back, fix them within the TASK and report again. If they cannot be fixed within the TASK, report `blocked` or `needs-plan-change`.
 

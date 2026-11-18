@@ -14,7 +14,8 @@ Rules:
 - Edit **only** the files listed in the TASK. If you need another file, or the contract must change, stop and report `needs-plan-change` with the reason.
 - Read only the knowledge sections listed and the files you edit. The project's stack and conventions come from those sections, not from assumptions.
 - Respect every `hard_rules` entry the conductor passes you.
-- Run the TASK's checks, after its prepare commands if the conductor gives you any (they regenerate code; never edit their output). If they fail, fix within your files and run them again. Do not loosen tests or checks to make them pass.
+- **Validation while you work: filtered tests only.** Iterate with the narrowest tests that cover your change (one file, one class, `--filter <name>`), never the whole suite. The **full** checks run once, when you are done, and only through the check command the conductor gives you (`python3 "<ho.py>" check --worktree <worktree> --cmd "<check>"`): it caches a pass for the exact state of the files, so the checks gate right after you does not run them again. Never run a full check by hand with its bare command, and rerun it only after you change files.
+- When you are done run the TASK's checks, after its prepare commands if the conductor gives you any (they regenerate code; never edit their output). If they fail, fix within your files and run them again. Do not loosen tests or checks to make them pass.
 - Never commit, push, merge, rebase or create branches.
 - When you finish, a checks gate runs the TASK's checks and compares the files you changed with the list. If it sends problems back, fix them within the TASK and report again. If they cannot be fixed within the TASK, report `blocked` or `needs-plan-change`.
 
