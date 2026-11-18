@@ -9,3 +9,9 @@ Verdict: <no high findings | n high, n medium, n low> · <another round: yes (hi
 
 | Severity | File:line | What | Why | Fix |
 |---|---|---|---|---|
+
+## Advisories (never blocking)
+
+From the checks gate's `advisories` (e.g. `composer audit`): one line per repo and command with its result. Also one line in the project's backlog when something was found.
+
+- <repo> · `<command>` · <ok | findings: short summary>

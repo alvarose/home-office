@@ -5,7 +5,7 @@
   worktree-remove  remove a feature worktree after the merge (refuses with an open TASK or
               uncommitted changes) and, with --delete-branch, its branch if merged into --base
   task-start  open a TASK in a worktree: closed file list, delete list, deny rules,
-              prepare commands, checks, baseline
+              prepare commands, checks, advisories (never blocking), baseline
   task-status show the active TASK of a worktree
   task-end    close the TASK: always print the gate (pass / fail; it runs the checks here when no
               checks gate ran, e.g. delegated tools) and the touched files, remove the scope file,
@@ -227,6 +227,8 @@ def cmd_task_start(a) -> None:
         "deny": parse_deny(a.deny) + deny_links,
         "prepare": a.prepare or [],
         "checks": a.check or [],
+        "advisory": a.advisory or [],
+        "gate_seconds": a.gate_seconds,
         "ignore": [g.replace("\\", "/") for g in a.ignore or []],
         "attempts": a.attempts,
         "check_timeout": a.check_timeout,
@@ -238,14 +240,16 @@ def cmd_task_start(a) -> None:
     save_scope(wt, scope)
     out({"ok": True, "task": a.task, "worktree": wt, "files": scope["files"],
          "delete": scope["delete"], "deny": scope["deny"], "prepare": scope["prepare"],
-         "checks": scope["checks"], "linked": links, "reinstalled": reinstalled,
+         "checks": scope["checks"], "advisory": scope["advisory"],
+         "gate_seconds": scope["gate_seconds"], "linked": links, "reinstalled": reinstalled,
          "state": state, "prompt_marker": f"HOME-OFFICE-WORKTREE: {wt}"})
 
 
 def summary(scope: dict) -> dict:
     # `gate` first: it is the one field the conductor must always read.
     return {k: scope.get(k) for k in ("gate", "task", "worktree", "gate_blocks", "touched",
-                                      "generated", "results", "problems", "started", "last_run")}
+                                      "generated", "results", "problems", "advisories",
+                                      "started", "last_run")}
 
 
 LAST_FILE = "home-office-last-task.json"
@@ -445,6 +449,12 @@ def main() -> None:
     s.add_argument("--prepare", action="append",
                    help="command run before the checks, e.g. a code generator (repeat)")
     s.add_argument("--check", action="append", help="command that must pass (repeat)")
+    s.add_argument("--advisory", action="append",
+                   help="command run after the checks that never blocks, e.g. 'composer audit'; its "
+                        "output tail goes to `advisories` in the task result (repeat)")
+    s.add_argument("--gate-seconds", type=int, default=540,
+                   help="time cap of the checks gate (the app cancels hooks at ~600 s); when it is "
+                        "reached the gate records `timeout` and task-end runs what is left")
     s.add_argument("--setup", action="append",
                    help="the repo's setup commands: used to reinstall a cloned dependency folder when "
                         "the TASK changes its manifest or lock file (repeat)")

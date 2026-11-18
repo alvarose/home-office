@@ -9,8 +9,10 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 
@@ -266,31 +268,76 @@ def save_failed_output(cmd: str, text: str) -> str:
         return ""
 
 
-def run_check(cmd: str, cwd: str, timeout: int = 1200, tail: int = 40):
+def kill_tree(proc) -> None:
+    """Kill a process and everything it started (a shell leaves its children running)."""
     try:
-        res = subprocess.run(windows_command(cmd), cwd=cwd, shell=True, capture_output=True,
-                             text=True, encoding="utf-8", errors="replace", timeout=timeout)
-        full = ANSI.sub("", (res.stdout or "") + (res.stderr or "")).strip()
-        lines = full.splitlines()
-        note = "" if res.returncode == 0 else save_failed_output(cmd, full)
-        return res.returncode == 0, "\n".join(lines[-tail:]) + note
-    except subprocess.TimeoutExpired:
-        return False, f"timed out after {timeout}s"
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
+def run_check_ex(cmd: str, cwd: str, timeout: float = 1200, tail: int = 40):
+    """Run a shell command: (ok, tail of its output, timed_out).
+
+    Output goes to a temp file, not a pipe, and a timeout kills the whole process tree: a
+    pipe held open by a grandchild would otherwise make the call wait for it after the kill."""
+    fd, path = tempfile.mkstemp(prefix="ho-check-", suffix=".out")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            extra = {} if IS_WINDOWS else {"start_new_session": True}
+            proc = subprocess.Popen(windows_command(cmd), cwd=cwd, shell=True, stdout=fh,
+                                    stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **extra)
+            try:
+                proc.wait(timeout=max(1.0, float(timeout)))
+            except subprocess.TimeoutExpired:
+                kill_tree(proc)
+                try:
+                    proc.wait(timeout=10)
+                except Exception:
+                    pass
+                return False, f"timed out after {int(timeout)}s", True
+        with open(path, "rb") as fh:
+            full = ANSI.sub("", fh.read().decode("utf-8", errors="replace")).strip()
+        ok = proc.returncode == 0
+        note = "" if ok else save_failed_output(cmd, full)
+        return ok, "\n".join(full.splitlines()[-tail:]) + note, False
     except Exception as exc:  # command not found, etc.
-        return False, f"could not run: {exc}"
+        return False, f"could not run: {exc}", False
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def run_check(cmd: str, cwd: str, timeout: float = 1200, tail: int = 40):
+    ok, text, _ = run_check_ex(cmd, cwd, timeout, tail)
+    return ok, text
 
 
 # ---------------------------------------------------------------- task evaluation
 
-def run_prepare(worktree: str, scope: dict, timeout: int):
-    """Run the TASK's prepare commands (code generators and the like) before the checks.
+def run_prepare(worktree: str, scope: dict, run):
+    """Run the TASK's prepare commands (code generators, formatters) before the checks.
 
-    Returns (problems, results, generated): `generated` are the files the commands wrote,
-    which never count as changed by the TASK (they are regenerated from the TASK's files).
+    `run(cmd)` runs one command and returns (ok, tail, hit_gate_cap).
+    Returns (problems, results, generated): `generated` are the files the commands wrote that
+    the TASK did not touch itself; they never count as changed by the TASK (they are
+    regenerated from its files). A file the executor had already changed (it differs from the
+    task-start baseline) is not generated even if a formatter rewrote it: it stays subject to
+    the TASK's file list, so a formatter cannot launder an out-of-scope edit.
     """
     commands = scope.get("prepare") or []
     if not commands:
         return [], [], []
+
     def state(rel):
         try:
             mtime = os.stat(os.path.join(worktree, rel)).st_mtime_ns
@@ -302,27 +349,62 @@ def run_prepare(worktree: str, scope: dict, timeout: int):
     before = {rel: state(rel) for rel in changed_files(worktree)}
     problems, results = [], []
     for cmd in commands:
-        ok, tail = run_check(cmd, worktree, timeout=timeout)
-        results.append({"prepare": cmd, "ok": ok})
+        ok, tail, hit = run(cmd)
+        results.append({"prepare": cmd, "ok": None if hit else ok})
+        if hit:
+            break
         if not ok:
             problems.append(f"$ {cmd}   (prepare)\n{tail}")
             break
+    baseline = scope.get("baseline") or {}
+    known = set(scope.get("generated") or [])
     generated = []
     for rel in changed_files(worktree):
         old_hash, old_mtime = before.get(rel, (None, None))
         new_hash, new_mtime = state(rel)
-        if old_hash != new_hash or old_mtime != new_mtime:
-            generated.append(rel)
+        if old_hash == new_hash and old_mtime == new_mtime:
+            continue
+        if rel in before and rel not in known and baseline.get(rel) != old_hash:
+            continue  # the executor's own edit (a formatter rewrote it): not generated
+        generated.append(rel)
     return problems, results, generated
 
 
-def evaluate_task(worktree: str, scope: dict) -> list:
-    """Prepare commands, scope of the changed files, then checks. Updates `scope` in place.
+ADVISORY_SECONDS = 180
 
-    Returns the list of problems (empty when the TASK passes).
+
+def evaluate_task(worktree: str, scope: dict, budget=None) -> list:
+    """Prepare commands, scope of the changed files, then checks, then advisories.
+
+    Updates `scope` in place. Returns the list of problems (empty when the TASK passes).
+
+    `budget` (seconds) is the checks gate's time cap: the app cancels a SubagentStop hook
+    after ~600 s, so the gate must give up cleanly before that. When a command does not
+    finish inside it, `scope["gate_timeout"]` says which and nothing is reported as a
+    problem for it: the caller leaves the evaluation to `task-end`, which has no cap and
+    does not repeat the checks that already passed (`scope["checks_passed"]`).
     """
     timeout = int(scope.get("check_timeout") or 1200)
-    prep_problems, results, generated = run_prepare(worktree, scope, timeout)
+    deadline = time.monotonic() + budget if budget else None
+    redo = set(scope.get("checks_passed") or []) if scope.get("gate") == "timeout" else set()
+    scope.pop("gate_timeout", None)
+
+    def run(cmd, cap=timeout, soft=False):
+        left = cap
+        if deadline is not None:
+            left = min(cap, deadline - time.monotonic())
+            if left < 1:
+                if not soft:
+                    scope["gate_timeout"] = {"command": cmd, "seconds": int(budget),
+                                             "note": "not started: no time left"}
+                return False, f"not run: the gate's {int(budget)}s cap was reached", True
+        ok, tail, expired = run_check_ex(cmd, worktree, timeout=left)
+        hit = expired and deadline is not None and left < cap
+        if hit and not soft:
+            scope["gate_timeout"] = {"command": cmd, "seconds": int(budget)}
+        return ok, tail, hit
+
+    prep_problems, results, generated = run_prepare(worktree, scope, run)
     scope["generated"] = sorted(set(scope.get("generated") or []) | set(generated))
     gen = set(scope["generated"])
 
@@ -340,12 +422,32 @@ def evaluate_task(worktree: str, scope: dict) -> list:
                         + "\nRevert those changes, or stop and report `needs-plan-change`.")
     problems.extend(prep_problems)
 
-    if not problems:
+    passed = []
+    if not problems and not scope.get("gate_timeout"):
         for cmd in scope.get("checks") or []:
-            ok, tail = run_check(cmd, worktree, timeout=timeout)
+            if cmd in redo:
+                results.append({"check": cmd, "ok": True,
+                                "skipped": "passed before the gate timed out"})
+                passed.append(cmd)
+                continue
+            ok, tail, hit = run(cmd)
+            if hit:
+                results.append({"check": cmd, "ok": None, "timeout": True})
+                break
             results.append({"check": cmd, "ok": ok})
-            if not ok:
+            if ok:
+                passed.append(cmd)
+            else:
                 problems.append(f"$ {cmd}\n{tail}")
+    scope["checks_passed"] = passed
+
+    # Advisories (audits and the like): never blocking, run once the checks are settled.
+    scope["advisories"] = []
+    if not problems and not scope.get("gate_timeout"):
+        for cmd in scope.get("advisory") or []:
+            ok, tail, hit = run(cmd, cap=min(timeout, ADVISORY_SECONDS), soft=True)
+            scope["advisories"].append({"command": cmd, "ok": None if hit else ok,
+                                        "output": "\n".join(tail.splitlines()[-12:])})
 
     scope["touched"] = touched
     scope["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")

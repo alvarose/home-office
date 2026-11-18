@@ -17,6 +17,12 @@ On failure it blocks the stop and sends the problems back, so the executor fixes
 After `attempts` blocks (default 2) it lets the subagent stop and records `gate: fail`,
 so the conductor escalates to the user instead of looping. On success: `gate: pass`.
 
+Time cap: the app cancels a SubagentStop hook after ~600 s, however long `hooks.json` allows.
+The gate therefore gives itself `gate_seconds` (default 540) for everything it runs. When a
+command does not finish in time it is killed, the gate records `gate: timeout` and lets the
+subagent stop: `task-end` (a command, no hook cap) then runs what is left and answers
+pass or fail. Advisories (`advisory`, e.g. an audit) run after the checks and never block.
+
 Fail-open: on any error it lets the subagent stop.
 """
 
@@ -98,11 +104,21 @@ def main() -> None:
     if not worktree:
         return
     scope = load_scope(worktree)
-    if not scope or scope.get("gate") in ("pass", "fail"):
+    if not scope or scope.get("gate") in ("pass", "fail", "timeout"):
         return
 
     task = scope.get("task") or "this TASK"
-    problems = evaluate_task(worktree, scope)
+    budget = int(scope.get("gate_seconds") or 540)
+    problems = evaluate_task(worktree, scope, budget=budget)
+
+    cut = scope.get("gate_timeout")
+    if cut and not problems:
+        scope["gate"] = "timeout"
+        save_scope(worktree, scope)
+        emit({"systemMessage": f"home-office: the checks gate for {task} stopped at its {budget}s "
+                               f"cap while running `{cut.get('command')}`. Not a failure: the "
+                               f"conductor's task-end runs the rest, with no time cap."})
+        return
 
     if not problems:
         scope["gate"] = "pass"

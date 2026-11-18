@@ -17,8 +17,12 @@ repos:                        # each repo: path, roles, checks (must pass to clo
                               # and prepare (run before the checks of every TASK, e.g. code generators);
                               # copy takes files or folders; base overrides base_branch for one repo;
                               # link: [vendor, node_modules] clones them from the main checkout (hard links)
-                              # instead of installing, when the lock files are identical
-  app: { path: ., roles: [backend, frontend], checks: [], copy: [], setup: [], prepare: [] }
+                              # instead of installing, when the lock files are identical;
+                              # advisories (e.g. composer audit): run after the checks, never block, their
+                              # output goes to REVIEW.md and the backlog; keep audits out of `checks`.
+                              # Formatters go in `prepare`, limited to changed files (vendor/bin/pint --dirty,
+                              # ./gradlew ktlintFormat): they fix style before the checks run
+  app: { path: ., roles: [backend, frontend], checks: [], advisories: [], copy: [], setup: [], prepare: [] }
 
 layers: [backend, frontend]   # execution order inside a feature
 base_branch: main             # default base for every repo; a repo can set its own `base`
@@ -53,6 +57,8 @@ limits:
   tasks_per_feature: 8        # over this, the architect proposes trimming or splitting, and you hear it before gate 2
   review_rounds: 1            # review rounds per feature; one more only to check fixes of high or medium findings
                               # (low findings go to REVIEW.md and the project backlog, never to new TASKs unasked)
+  gate_seconds: 540           # time cap of the checks gate (the app cancels hooks at ~600 s); over it the gate
+                              # records `timeout` and task-end runs the rest, with no cap
   loose_session_hours: 12     # a session opened here without a home-office command (or kept after status) is
                               # warned once at this age: long jobs go to /home-office:task, one step per session
 
