@@ -20,6 +20,11 @@
               no TASK is open: up_to_date | merged | conflict (aborted, nothing changed)
   waiting     the waiting inbox <work>/waiting.md: add | answer | acted | list | stats (ids and
               timestamps are deterministic; answered rows are kept, they are the measurement)
+  weight      measure what every session loads (config, board, waiting inbox, indexes, project /
+              stream / batch pages, open STATE.md files, the repos' CLAUDE.md / AGENTS.md) against
+              limits; --rotate moves old log rows and old acted waiting rows to <work>/archive/
+  maturity    per repo: commits, age, test files, checks and `mature` (or the repo's `mature:`);
+              the classifier sends more work to the short lane in a mature repo
   context     print the context size of a session transcript (debugging)
 
 Usage examples (paths are absolute):
@@ -883,6 +888,10 @@ def cmd_waiting(a) -> None:
             row["acted"] = now.strftime(TS_FMT)
         save_waiting(path, data)
         out({"ok": True, "op": op, "file": path, "row": wait_view(row, "answered", now)})
+    if op == "stats":  # rows rotated by `weight --rotate` still count
+        archived = os.path.join(os.path.dirname(path), "archive", "waiting.md")
+        if os.path.isfile(archived):
+            data["tables"][1]["rows"] += load_waiting(archived)["tables"][1]["rows"]
     rows = wait_rows(data, a, now)
     if op == "list":
         shown = [r for r in rows if a.state == "all" or r["state"] == a.state or
@@ -916,6 +925,225 @@ def cmd_waiting(a) -> None:
          "wait": wait_stats([r["wait_hours"] for r in answered if r["wait_hours"] is not None]),
          "by_kind": by_kind, "open_by_age": buckets,
          "oldest_open": {"id": oldest["id"], "age_hours": oldest["age_hours"], "age": oldest["age"]} if oldest else None})
+
+
+# ---------------------------------------------------------------- harness weight
+# What every session loads before doing anything (config, board, waiting inbox, indexes,
+# project and stream pages, open STATE.md files, the repos' CLAUDE.md / AGENTS.md) only
+# grows unless something trims it. `weight` measures it against limits; `--rotate` moves
+# old log rows and old acted waiting rows to <work>/archive/ (Git keeps everything anyway).
+
+DONE_WORDS = ("done", "closed", "merged", "finished", "complete", "completed", "cancelled", "canceled",
+              "hecha", "hecho", "cerrada", "cerrado", "fusionada", "terminada", "completada",
+              "cancelada", "descartada", "fait", "fini", "fermé", "erledigt", "abgeschlossen")
+REPO_RE = re.compile(r"^[ \t]{2}([A-Za-z0-9_.-]+):\s*\{(.*)\}", re.MULTILINE)
+
+
+def config_text(a):
+    config = os.path.abspath(a.config) if getattr(a, "config", None) else find_up(os.getcwd(), ".home-office.yml")
+    if not config or not os.path.isfile(config):
+        out({"ok": False, "error": "no .home-office.yml found (run from the work folder or pass --config)"}, 1)
+    with open(config, encoding="utf-8") as fh:
+        return config, fh.read()
+
+
+def top_value(text: str, key: str, default=None):
+    m = re.search(rf"^{key}\s*:\s*([^#\n]+)", text, re.MULTILINE)
+    return m.group(1).strip().strip("'\"") if m else default
+
+
+def limit_value(text: str, key: str, default: int) -> int:
+    m = re.search(rf"^\s+{key}\s*:\s*([0-9_]+)", text, re.MULTILINE)
+    return int(m.group(1).replace("_", "")) if m else default
+
+
+def config_repos(text: str, base: str) -> dict:
+    """repo key -> {path, checks (bool: any), mature (True/False/None)} from the inline entries."""
+    repos = {}
+    for key, body in REPO_RE.findall(text):
+        path = re.search(r"\bpath\s*:\s*([^,}]+)", body)
+        if not path:
+            continue
+        checks = re.search(r"\bchecks\s*:\s*\[([^\]]*)\]", body)
+        mature = re.search(r"\bmature\s*:\s*(true|false)", body)
+        repos[key] = {"path": os.path.normpath(os.path.join(base, path.group(1).strip().strip("'\""))),
+                      "checks": bool(checks and checks.group(1).strip()),
+                      "mature": None if not mature else mature.group(1) == "true"}
+    return repos
+
+
+def est_tokens(text: str) -> int:
+    return round(len(text) / 4)
+
+
+def state_done(path: str) -> bool:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            head = [next(fh, "") for _ in range(6)]
+    except OSError:
+        return False
+    line = next((l for l in head if re.match(r"^\s*[^:#\n]{2,20}:", l) and not l.startswith("#")), "")
+    value = line.split(":", 1)[1] if ":" in line else ""
+    words = re.findall(r"[^\W\d_]+", value.lower())
+    return bool(words) and words[0] in DONE_WORDS
+
+
+def table_split(lines: list):
+    """(before, header+sep, rows, after) of the first Markdown table in lines."""
+    start = next((i for i, l in enumerate(lines) if l.strip().startswith("|")), None)
+    if start is None or start + 1 >= len(lines):
+        return lines, [], [], []
+    end, rows = start + 2, []  # blank lines between rows (hand edits) do not end the table
+    while end < len(lines) and (lines[end].strip().startswith("|") or not lines[end].strip()):
+        line = lines[end].strip()
+        if line and not re.match(r"^\|[\s:|-]+\|?$", line):
+            rows.append(lines[end])
+        end += 1
+    return lines[:start], lines[start:start + 2], rows, lines[end:]
+
+
+def rotate_log(log: str, archive: str, keep: int) -> int:
+    with open(log, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+    before, head, rows, after = table_split(lines)
+    if len(rows) <= keep or not head:
+        return 0
+    old, rows = rows[:len(rows) - keep], rows[len(rows) - keep:]
+    if os.path.isfile(archive):
+        with open(archive, encoding="utf-8") as fh:
+            alines = fh.read().splitlines()
+        abefore, ahead, arows, aafter = table_split(alines)
+        alines = abefore + (ahead or head) + arows + old + aafter
+    else:
+        alines = before + head + old
+    os.makedirs(os.path.dirname(archive), exist_ok=True)
+    with open(archive, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(alines).rstrip("\n") + "\n")
+    with open(log, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(before + head + rows + after).rstrip("\n") + "\n")
+    return len(old)
+
+
+def rotate_waiting(path: str, archive: str, days: int, now: datetime) -> int:
+    if not os.path.isfile(path):
+        return 0
+    data = load_waiting(path)
+    old = [r for r in data["tables"][1]["rows"] if r.get("acted") and parse_ts(r.get("answered"))
+           and (now - parse_ts(r["answered"])).days >= days]
+    if not old:
+        return 0
+    arch = load_waiting(archive)
+    arch["tables"][1]["rows"] = old + arch["tables"][1]["rows"]
+    save_waiting(archive, arch)
+    data["tables"][1]["rows"] = [r for r in data["tables"][1]["rows"] if r not in old]
+    save_waiting(path, data)
+    return len(old)
+
+
+def cmd_weight(a) -> None:
+    config, text = config_text(a)
+    base, work = os.path.dirname(config), work_dir(config)
+    now = wait_now(a)
+    file_tokens = limit_value(text, "file_tokens", 4000)
+    log_rows = limit_value(text, "log_rows", 60)
+    waiting_days = limit_value(text, "waiting_days", 30)
+    archive = os.path.join(work, "archive")
+    board = os.path.join(work, top_value(text, "board", "BOARD.md"))
+    log = os.path.join(work, top_value(text, "log", "log.md"))
+    rotated = {}
+    if a.rotate:
+        rotated["log"] = rotate_log(log, os.path.join(archive, os.path.basename(log)), log_rows) \
+            if os.path.isfile(log) else 0
+        rotated["waiting"] = rotate_waiting(os.path.join(work, "waiting.md"),
+                                            os.path.join(archive, "waiting.md"), waiting_days, now)
+
+    files = [("config", config), ("board", board), ("log", log), ("waiting", os.path.join(work, "waiting.md"))]
+    for m in re.finditer(r"\bpath\s*:\s*([^,}\n]+),\s*index\s*:\s*([^,}\n]+)", text):
+        files.append(("index", os.path.join(base, m.group(1).strip(), m.group(2).strip())))
+    for kind, pattern in (("project", ("projects", "project.md")), ("stream", ("streams", "stream.md")),
+                          ("batch", ("batches", "batch.md")), ("state", ("features", "STATE.md"))):
+        folder = os.path.join(work, pattern[0])
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            path = os.path.join(folder, name, pattern[1])
+            if os.path.isfile(path) and not (kind == "state" and state_done(path)):
+                files.append((kind, path))
+    for key, repo in config_repos(text, base).items():
+        for name in ("CLAUDE.md", "AGENTS.md"):
+            path = os.path.join(repo["path"], name)
+            if os.path.isfile(path) and os.path.normpath(path) not in (os.path.normpath(p) for _, p in files):
+                files.append(("agents:" + key, path))
+
+    rows, total, over = [], 0, []
+    for kind, path in files:
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            body = fh.read()
+        tokens = est_tokens(body)
+        row = {"kind": kind, "path": os.path.relpath(path, work).replace("\\", "/"),
+               "lines": body.count("\n") + (0 if body.endswith("\n") or not body else 1), "tokens": tokens}
+        if kind == "log":
+            row["rows"] = len(table_split(body.splitlines())[2])
+            if row["rows"] > log_rows:
+                row["over"] = f"{row['rows']} rows > log_rows {log_rows}: run `ho.py weight --rotate`"
+        elif kind == "waiting":
+            data = load_waiting(path)
+            stale = [r["id"] for r in data["tables"][1]["rows"] if r.get("acted") and parse_ts(r.get("answered"))
+                     and (now - parse_ts(r["answered"])).days >= waiting_days]
+            if stale:
+                row["over"] = f"{len(stale)} acted rows older than {waiting_days} d: run `ho.py weight --rotate`"
+        elif tokens > file_tokens:
+            row["over"] = f"~{tokens} tokens > file_tokens {file_tokens}: " + (
+                "compact it (keep only what is live; Git keeps the rest)" if kind in ("board", "project", "stream", "batch", "state")
+                else "trim it" if kind.startswith("agents:") or kind == "index" else "review it")
+        row["every_session"] = kind in ("config", "board", "index")
+        total += tokens if row["every_session"] else 0
+        rows.append(row)
+        if "over" in row:
+            over.append({"path": row["path"], "why": row["over"]})
+    rows.sort(key=lambda r: -r["tokens"])
+    out({"ok": True, "work": work, "limits": {"file_tokens": file_tokens, "log_rows": log_rows,
+                                               "waiting_days": waiting_days},
+         "always_read_tokens": total, "over": over, "rotated": rotated, "files": rows})
+
+
+# ---------------------------------------------------------------- repo maturity
+# The classifier routes more work to the short lane in a mature repo: one with history,
+# tests and checks, where an agent learns more from the code than from a SPEC.
+
+def repo_maturity(path: str, has_checks: bool, override) -> dict:
+    info = {"path": path, "checks": has_checks}
+    if not os.path.isdir(path):
+        return {**info, "mature": bool(override), "reason": "repo not found"}
+    commits = git(path, "rev-list", "--count", "HEAD")
+    first = git(path, "log", "--reverse", "--format=%ct", "--max-parents=0", "HEAD")
+    files = git(path, "ls-files")
+    tracked = files.stdout.splitlines() if files.returncode == 0 else []
+    tests = [f for f in tracked if re.search(r"(^|/)(tests?|__tests__|spec|androidTest|test)/|"
+                                           r"(Test|Tests|Spec)\.(php|kt|java|swift)$|\.(test|spec)\.[jt]sx?$", f)]
+    info["commits"] = int(commits.stdout.strip() or 0) if commits.returncode == 0 else 0
+    stamps = first.stdout.split()
+    info["age_days"] = int((time.time() - int(stamps[0])) // 86400) if stamps else 0
+    info["files"], info["test_files"] = len(tracked), len(tests)
+    measured = info["commits"] >= 200 and info["test_files"] >= 20 and info["age_days"] >= 60 and has_checks
+    info["mature"] = measured if override is None else override
+    info["source"] = "measured" if override is None else "config"
+    if override is None:
+        missing = [n for n, ok in (("200 commits", info["commits"] >= 200), ("20 test files", info["test_files"] >= 20),
+                                   ("60 days", info["age_days"] >= 60), ("checks", has_checks)) if not ok]
+        info["reason"] = "history, tests and checks" if measured else "missing: " + ", ".join(missing)
+    return info
+
+
+def cmd_maturity(a) -> None:
+    config, text = config_text(a)
+    repos = config_repos(text, os.path.dirname(config))
+    keys = a.repo or list(repos)
+    unknown = [k for k in keys if k not in repos]
+    if unknown:
+        out({"ok": False, "error": f"unknown repos: {', '.join(unknown)}"}, 1)
+    out({"ok": True, "repos": {k: repo_maturity(repos[k]["path"], repos[k]["checks"], repos[k]["mature"])
+                               for k in keys}})
 
 
 def main() -> None:
@@ -1044,6 +1272,19 @@ def main() -> None:
         x.add_argument("--feature", help="only rows whose work starts with this, e.g. 07-x")
         x.add_argument("--since", help="only rows that started on or after YYYY-MM-DD")
     wt.set_defaults(fn=cmd_waiting)
+
+    g = sub.add_parser("weight", help="what every session loads, against limits.file_tokens / log_rows / waiting_days")
+    g.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
+    g.add_argument("--rotate", action="store_true",
+                   help="move log rows beyond limits.log_rows and acted waiting rows older than "
+                        "limits.waiting_days to <work>/archive/")
+    g.add_argument("--now", help="'YYYY-MM-DD HH:MM' instead of the clock (tests)")
+    g.set_defaults(fn=cmd_weight)
+
+    m = sub.add_parser("maturity", help="per repo: commits, age, test files, checks and whether it is mature")
+    m.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
+    m.add_argument("--repo", action="append", help="repo key (repeat; default: all)")
+    m.set_defaults(fn=cmd_maturity)
 
     c = sub.add_parser("context")
     c.add_argument("--transcript", required=True)

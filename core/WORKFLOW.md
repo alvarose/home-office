@@ -36,6 +36,7 @@ A classifier decides; the user can override with one word.
 - **Task** (`/home-office:task`, chosen by the user): one self-contained job — a check, a cleanup, a mechanical change — across any number of repos, with no design. One subagent per repo (the explorer for read-only checks), a results table, one line in `log.md`, and the session ends. Anything that needs decisions goes to the feature lane.
 - **Long jobs** (a watcher, operating a server or a bot): tasks too, one step per session, each ending with a hand-over note in `jobs/<name>.md` and the next step offered as a new session. Never one conversation for days, and never on the strong model (see "Loose sessions").
 - **Feature lane**: anything that touches more than one repo, changes a contract or schema, or is estimated at more than ~5 files.
+- **Mature repos** (`ho.py maturity`: at least 200 commits, 20 test files, 60 days and some `checks`; or `mature: true|false` on the repo in the config): the agent learns more from the code and its tests than from a SPEC, so the bar for the feature lane goes up. Inside one mature repo, a change with no contract, schema, `hard_rules` or `risk_zones` impact and no open design decision is **short** up to ~10 files, or a **task**; the feature lane is for real design (a new contract, a schema change, several repos, decisions the user must take). The scaffolding (SPEC, PLAN, TASKs) is for young repos, where there is nothing else to go by.
 - **Minor fixes** (findings from an audit or a review, cleanups, style) go to the short lane or to a task by default, even across repos or over ~5 files, unless one of them changes a contract or a schema. A long list runs as several short changes or tasks; what waits goes to the project's backlog. Only the user can send them to the feature lane.
 
 ## Waits
@@ -97,6 +98,16 @@ A session opened in the work folder without a home-office command (a conversatio
 - Attempts per TASK: 2.
 - Checks gate time cap: 540 s (`gate_seconds`) → `gate: timeout`, finished by `task-end`.
 - Parallel features: no limit, warning from 4 (see "Parallel features" for claims, hotspots and early sync).
+- Harness weight: 4,000 tokens per loaded file (`file_tokens`), 60 log rows (`log_rows`), acted waits kept 30 days (`waiting_days`) → see "Harness weight".
+
+## Harness weight
+
+The files every session loads (the config, the board, the knowledge indexes; and, when relevant, project, stream and batch pages, open `STATE.md` files, the waiting inbox, the repos' `CLAUDE.md` / `AGENTS.md`) are paid for on every call of every session. Left alone they only grow: a board that keeps every finished item, a log with every line since day one. That cost buys nothing once the work is done, because Git, the log archive and each feature's `STATE.md` already hold the history.
+
+- `ho.py weight` measures them (estimated tokens, the heaviest first, `always_read_tokens` for the ones every session loads) and lists what is `over` the limits. `status` shows one line when something is over; `close` runs `weight --rotate`.
+- **Rotation** (deterministic, `--rotate`): log rows beyond `log_rows` and acted waiting rows older than `waiting_days` move to `<work>/archive/` (same format; `waiting stats` still counts them). Nothing is deleted. Sessions never read `archive/` unless the user asks.
+- **Compaction** (by a session, `close` or `/home-office:task "compact the harness: <files>"`): keep only what is **live**. The board: one row per feature in flight and the open items, nothing struck through, no "done on <date>" notes, no history. A project page: what it is, the open Backlog and the last 10 "Tasks done" lines. A stream or batch page: the roadmap or repo table and the open decisions. An open `STATE.md`: its template (about 20 lines). What is removed is appended to the same path under `<work>/archive/` when it is still worth reading; otherwise Git keeps it. A repo's `CLAUDE.md` / `AGENTS.md` is the repo's own file: propose the cut (duplicated rules, rules the hooks or the checks already enforce, history), never edit it unasked.
+- **Review it on a date.** What helped at the start (long briefs, detailed SPECs for a young repo) may only cost later. Mature repos route more work to the short lane (see "Lanes").
 
 ## Parallel work
 

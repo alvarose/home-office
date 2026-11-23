@@ -42,6 +42,8 @@ Everything that waits on you (decisions, pushes, merges, staging checks) is kept
 
 Parallel features in the same repo claim their files (`ho.py claims`), edit each hotspot (`hotspots` in the config) one feature at a time, and merge the base into their branch early (`ho.py sync`); see ["Parallel features"](core/WORKFLOW.md#parallel-features).
 
+The harness stays light: `ho.py weight` measures what sessions load, `close` moves old log and inbox rows to `<work>/archive/` and keeps the board to what is live, and mature repos (`ho.py maturity`) send more work to the short lane; see ["Harness weight"](core/WORKFLOW.md#harness-weight).
+
 ## Requirements
 
 - `git` and Python 3.8+ available as `python3` (the guards and the helper script use only the standard library).

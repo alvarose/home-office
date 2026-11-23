@@ -24,7 +24,8 @@ repos:                        # each repo: path, roles, checks (must pass to clo
                               # ./gradlew ktlintFormat): they fix style before the checks run;
                               # hotspots: [globs] of hot files that only one feature at a time may edit
                               # (e.g. phpstan-baseline.neon, **/values*/strings.xml, lock files, shared config);
-                              # task-start refuses a TASK that lists one another feature holds
+                              # task-start refuses a TASK that lists one another feature holds;
+                              # mature: true|false overrides ho.py maturity (a mature repo sends more work to the short lane)
   app: { path: ., roles: [backend, frontend], checks: [], advisories: [], copy: [], setup: [], prepare: [], hotspots: [] }
 
 layers: [backend, frontend]   # execution order inside a feature
@@ -64,6 +65,11 @@ limits:
                               # records `timeout` and task-end runs the rest, with no cap
   loose_session_hours: 12     # a session opened here without a home-office command (or kept after status) is
                               # warned once at this age: long jobs go to /home-office:task, one step per session
+  file_tokens: 4000           # harness weight (ho.py weight): a file sessions load (board, project / stream /
+                              # batch pages, open STATE.md, indexes, the repos' CLAUDE.md / AGENTS.md) over this
+                              # is flagged by status and close, to compact
+  log_rows: 60                # rows the log keeps; close moves older ones to <work>/archive/ (ho.py weight --rotate)
+  waiting_days: 30            # acted rows of the waiting inbox older than this move to <work>/archive/ too
 
 handover: card                # at a planned cut, in the Claude desktop app: card = propose the next session
                               # (one click); auto = start it, unless the next step waits for you

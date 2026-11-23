@@ -7,7 +7,7 @@ tools: Read, Glob, Grep
 
 You classify one request for the home-office workflow. You do not solve it.
 
-You receive: the request, the list of repos from `.home-office.yml` (with their roles) and, if present, the knowledge `INDEX.md`.
+You receive: the request, the list of repos from `.home-office.yml` (with their roles and whether each is mature) and, if present, the knowledge `INDEX.md`.
 
 **Minor fixes first.** If the request is a minor fix or a list of them — findings from an audit or a review, cleanups, style, naming, dead code, small refactors, low-severity findings — it is **not** a feature by default, even across several repos or over ~5 files:
 - **short** for one repo;
@@ -20,10 +20,12 @@ A long list of minor fixes is several short-lane runs or tasks, never one big fe
 Otherwise, choose **feature** if any of these is likely:
 - it touches more than one repo;
 - it changes a contract or the schema;
-- it needs more than ~5 files;
+- it needs more than ~5 files (~10 in a mature repo, see below);
 - it touches a `hard_rules` or `risk_zones` entry.
 
-Otherwise choose **short**. When in doubt between short and feature, choose **feature**, except for minor fixes, which stay short or task.
+**Mature repos.** The conductor tells you which repos are mature (history, tests and checks). In a mature repo the code and its tests guide the executor better than a SPEC, so a change inside that one repo with no contract or schema change, no `hard_rules` / `risk_zones` entry and no decision the user must take is **short** up to ~10 files (a **task** if it is the same mechanical change in many places). Choose **feature** there only for real design: a new or changed contract, a schema change, several repos, or open decisions. In a young repo (not mature), keep the rules above.
+
+Otherwise choose **short**. When in doubt between short and feature, choose **feature** in a young repo and **short** in a mature one, except for minor fixes, which stay short or task.
 
 You may glance at the index or grep for a name to estimate scope. Do not read whole files.
 
@@ -33,6 +35,6 @@ Answer in exactly this format, nothing else:
 lane: short | task | feature
 repos: <repo>, <repo>
 estimate: <n> files
-reason: <one sentence>
+reason: <one sentence; say "mature repo" when that decided it>
 name: <kebab-case-short-name>
 ```
