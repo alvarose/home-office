@@ -46,6 +46,10 @@ roles:                        # department -> tool and model (/home-office:model
   # custom roles use the generic implementer, e.g.:
   # mobile:      { tool: claude, model: sonnet, description: "Android app (Kotlin, Compose)" }
 
+# current_models: { opus: <full id> } # newest id per family (fable, opus, sonnet, haiku); overrides the
+                              # plugin's list (`ho.py models`). Sessions are started with these ids, and a
+                              # session on an older generation of its family is warned once
+
 risk_zones: []                # paths or areas that trigger the deep review
 hard_rules: []                # rules that must never be broken, in words (for planners and reviewers)
 guards: []                    # the enforceable part of the hard rules, checked by the hooks, e.g.:

@@ -86,6 +86,14 @@ A session opened in the work folder without a home-office command (a conversatio
 - The context cap hook warns a loose session once when it runs on another model than `roles.conductor`, and once when it has been open for `limits.loose_session_hours` (default 12): long jobs go to `/home-office:task`, one step per session with a hand-over note. At the context cap it is told to write that note and continue in a new session.
 - Sessions opened outside the work folder (e.g. straight in a repo) are not seen by the hooks.
 
+## Session models
+
+A session keeps the model it was created on, and a session it starts with `start_session` **without `model` inherits that model**, not the folder's default or the newest one. One old session can so spread an outdated or top-tier model to every session it launches. So:
+
+- **Every `start_session` from a project's work folder passes `model`, always, as a full id** — hand-overs, cards, side jobs, sessions a session proposes on its own initiative. A conductor session (`/home-office:new`, `resume`, `task`, anything that runs the flow) gets `roles.conductor.model` as a full id; any other gets the full id of the newest version of the family it needs. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" models` prints both (`roles`, `current`). Never leave it out to "keep" the launching session's model.
+- The current ids live in the plugin (`CURRENT_MODELS` in `hooks/_common.py`, kept up to date with each release) and a project can override any family with `current_models: { opus: <full id>, … }` in `.home-office.yml`. Never write an id from memory.
+- The context cap hook warns every session in the work folder once (at its start when the app sends the model, else at its first prompt or subagent after a model call) when it runs on an older generation of its family than the current one, with the `/model` to switch to. An idle old session can also be switched from another one (in the desktop app, `set_session_model`); a working one only when it stops.
+
 ## Limits (defaults, configurable)
 
 - Context cap per session: 150,000 tokens → close and start a new session instead of compacting.
@@ -170,7 +178,7 @@ The rules above are enforced, not only requested. They act only inside a worktre
   - **Formatters fix themselves.** Put them in `prepare` (`vendor/bin/pint --dirty`, prettier on changed files, `./gradlew ktlintFormat`), limited to changed files: style fixes happen before the checks. What a prepare command writes counts as generated, except a file the executor had already changed (it differs from the task-start baseline): that one stays subject to the TASK's file list, so a formatter cannot hide an out-of-scope edit.
   - **Advisories** (`advisories` per repo, e.g. `composer audit`, `npm audit`) run after the checks, never block, and their output tail goes into the task result (`advisories`). The conductor records them in `REVIEW.md` and, when they found something, as one line in the project's backlog. An audit does not belong in `checks`: a new CVE would fail every TASK on code nobody touched (`init` suggests moving it).
   - **Time cap.** The app cancels a SubagentStop hook after about 600 s whatever `hooks.json` says, so the gate gives itself `limits.gate_seconds` (default 540). A command still running at the cap is killed with its process tree, the gate records `gate: timeout` (not a failure, no attempt used) and lets the executor stop; `task-end` then runs the rest with no cap, skipping the checks that already passed.
-- **context cap** (on each prompt and after each subagent): warns at 80 % of `limits.context_tokens` and, over the cap, tells the session to close and continue in a new one. In loose sessions it also warns about the model and the age (see "Loose sessions").
+- **context cap** (on each prompt and after each subagent): warns at 80 % of `limits.context_tokens` and, over the cap, tells the session to close and continue in a new one. In loose sessions it also warns about the model and the age (see "Loose sessions"). In every session it warns once when the model is an older generation than the current one of its family (see "Session models").
 
 - **session title** (on each prompt): `/home-office:resume NN` titles the session `feat: NN-name`, and `/home-office:new <request>` titles it `new: <request>`. In the Claude desktop app, `new` then renames it to `feat: NN-name` (or `short: <name>`) once the work has a name.
 

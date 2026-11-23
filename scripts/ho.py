@@ -21,10 +21,13 @@
   waiting     the waiting inbox <work>/waiting.md: add | answer | acted | list | stats (ids and
               timestamps are deterministic; answered rows are kept, they are the measurement)
   weight      measure what every session loads (config, board, waiting inbox, indexes, project /
-              stream / batch pages, open STATE.md files, the repos' CLAUDE.md / AGENTS.md) against
-              limits; --rotate moves old log rows and old acted waiting rows to <work>/archive/
+              stream / batch pages, open STATE.md files, the repos' CLAUDE.md / AGENTS.md with the
+              files they import with `@path` lines) against limits; --rotate moves old log rows and old acted waiting rows to <work>/archive/
   maturity    per repo: commits, age, test files, checks and `mature` (or the repo's `mature:`);
               the classifier sends more work to the short lane in a mature repo
+  models      the newest full model id of each Claude family (plugin list, overridden by the
+              config's `current_models`) and each role's model as a full id: the `model` every
+              start_session passes, so a new session never inherits the launching session's model
   context     print the context size of a session transcript (debugging)
 
 Usage examples (paths are absolute):
@@ -55,8 +58,9 @@ from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
-from _common import (bump_rework, changed_files, evaluate_task, feature_state,  # noqa: E402
-                     find_up, git, git_dir, last_context_tokens, load_scope, matches,
+from _common import (bump_rework, changed_files, current_models, evaluate_task,  # noqa: E402
+                     feature_state, find_up, full_model_id, git, git_dir, last_context_tokens,
+                     load_scope, matches,
                      run_cached_check, run_check, save_scope, scope_path, snapshot, work_dir)
 
 
@@ -398,6 +402,24 @@ def cmd_check(a) -> None:
     out({"ok": res["ok"], "cached": res["cached"], "cmd": a.cmd.strip(), "seconds": res["seconds"],
          "ran_seconds": res.get("ran_seconds"), "at": res.get("at"), "timed_out": res["timed_out"],
          "tail": res["tail"]}, 0 if res["ok"] else 1)
+
+
+ROLE_RE = re.compile(r"^[ \t]{2}([A-Za-z0-9_-]+)\s*:\s*\{([^}\n]*\bmodel\s*:[^}\n]*)\}", re.MULTILINE)
+
+
+def cmd_models(a) -> None:
+    config = os.path.abspath(a.config) if a.config else find_up(os.getcwd(), ".home-office.yml")
+    text = ""
+    if config and os.path.isfile(config):
+        with open(config, encoding="utf-8") as fh:
+            text = fh.read()
+    roles = {}
+    for name, body in ROLE_RE.findall(text):
+        tool = re.search(r"\btool\s*:\s*['\"]?([\w.-]+)", body)
+        model = re.search(r"\bmodel\s*:\s*['\"]?([\w.\[\]/-]+)", body)
+        if model and (not tool or tool.group(1) == "claude"):
+            roles[name] = full_model_id(model.group(1), text)
+    out({"ok": True, "config": config, "current": current_models(text), "roles": roles})
 
 
 def cmd_context(a) -> None:
@@ -976,6 +998,39 @@ def est_tokens(text: str) -> int:
     return round(len(text) / 4)
 
 
+IMPORT_RE = re.compile(r"(?<![\w@`])@([~./\w-][^\s`)\]>\"']*)")
+
+
+def same_path(path: str) -> str:
+    return os.path.normcase(os.path.normpath(os.path.abspath(path)))
+
+
+def md_imports(path: str, depth: int = 5) -> list:
+    """Existing files a CLAUDE.md / AGENTS.md pulls in with `@path` (relative to the file that
+    names it, `~` = home), recursively up to `depth` hops as Claude Code does. Code fences and
+    code spans are skipped. Each file once, in order."""
+    found, keys, todo = [], {same_path(path)}, [(path, 0)]
+    while todo:
+        cur, level = todo.pop(0)
+        if level >= depth:
+            continue
+        try:
+            with open(cur, encoding="utf-8", errors="replace") as fh:
+                body = fh.read()
+        except OSError:
+            continue
+        body = re.sub(r"```.*?```", "", body, flags=re.DOTALL)
+        body = re.sub(r"`[^`\n]*`", "", body)
+        for m in IMPORT_RE.finditer(body):
+            ref = m.group(1).rstrip(".,;:")
+            target = os.path.expanduser(ref) if ref.startswith("~") else os.path.join(os.path.dirname(cur), ref)
+            if os.path.isfile(target) and same_path(target) not in keys:
+                keys.add(same_path(target))
+                found.append(os.path.normpath(target))
+                todo.append((target, level + 1))
+    return found
+
+
 def state_done(path: str) -> bool:
     try:
         with open(path, encoding="utf-8") as fh:
@@ -1067,11 +1122,14 @@ def cmd_weight(a) -> None:
             path = os.path.join(folder, name, pattern[1])
             if os.path.isfile(path) and not (kind == "state" and state_done(path)):
                 files.append((kind, path))
+    imported = {}  # repo CLAUDE.md / AGENTS.md -> the files its `@path` lines pull in
     for key, repo in config_repos(text, base).items():
         for name in ("CLAUDE.md", "AGENTS.md"):
             path = os.path.join(repo["path"], name)
-            if os.path.isfile(path) and os.path.normpath(path) not in (os.path.normpath(p) for _, p in files):
+            seen = {same_path(p) for _, p in files} | {same_path(p) for v in imported.values() for p in v}
+            if os.path.isfile(path) and same_path(path) not in seen:
                 files.append(("agents:" + key, path))
+                imported[path] = md_imports(path)
 
     rows, total, over = [], 0, []
     for kind, path in files:
@@ -1082,6 +1140,14 @@ def cmd_weight(a) -> None:
         tokens = est_tokens(body)
         row = {"kind": kind, "path": os.path.relpath(path, work).replace("\\", "/"),
                "lines": body.count("\n") + (0 if body.endswith("\n") or not body else 1), "tokens": tokens}
+        if imported.get(path):  # imports load with the file, so they count in its weight
+            imports = []
+            for ipath in imported[path]:
+                with open(ipath, encoding="utf-8", errors="replace") as fh:
+                    imports.append({"path": os.path.relpath(ipath, work).replace("\\", "/"),
+                                    "tokens": est_tokens(fh.read())})
+            row["own_tokens"], row["imports"] = tokens, imports
+            tokens = row["tokens"] = tokens + sum(i["tokens"] for i in imports)
         if kind == "log":
             row["rows"] = len(table_split(body.splitlines())[2])
             if row["rows"] > log_rows:
@@ -1285,6 +1351,10 @@ def main() -> None:
     m.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
     m.add_argument("--repo", action="append", help="repo key (repeat; default: all)")
     m.set_defaults(fn=cmd_maturity)
+
+    mo = sub.add_parser("models", help="the newest full model id of each family, and each role's model as a full id")
+    mo.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
+    mo.set_defaults(fn=cmd_models)
 
     c = sub.add_parser("context")
     c.add_argument("--transcript", required=True)

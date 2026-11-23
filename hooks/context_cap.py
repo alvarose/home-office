@@ -13,6 +13,12 @@ watcher, a server chat, a conversation) and `status` sessions also get, on a pro
     long jobs go to `/home-office:task`, one step per short session with a hand-over note.
 At the cap they are told to hand over to a new session instead of /home-office:close.
 
+Every session (flow or not) is also warned once when it runs on an older generation of its model
+family than the current one (`CURRENT_MODELS` in _common.py, or `current_models` in the config):
+a session keeps the model it was created on, and sessions it starts without `model` inherit it.
+The model is the hook input's `model` when the app sends one (SessionStart), else the latest main
+model call in the transcript, so a brand-new session is checked from its first model call on.
+
 It never blocks anything. Fail-open. `HOME_OFFICE_CAP=0` disables it for a session.
 """
 
@@ -25,7 +31,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import (emit, find_up, last_context_tokens, last_model,  # noqa: E402
-                     read_stdin_json, session_start)
+                     read_stdin_json, session_start, stale_model)
 
 DEFAULT_CAP = 150_000
 DEFAULT_LOOSE_HOURS = 12
@@ -116,6 +122,31 @@ def loose_warning(data: dict, config_text: str, state: dict, kind: str):
     return None
 
 
+def model_warning(data: dict, config_text: str, state: dict):
+    """(message for the user, context for the model) when the session's model is an older
+    generation of its family, once per session; None otherwise or when the model is unknown."""
+    if state.get("stale_checked"):
+        return None
+    model = data.get("model")
+    model = model.get("id") if isinstance(model, dict) else model
+    if not isinstance(model, str) or not model.startswith("claude-"):
+        model = last_model(data.get("transcript_path"))
+    if not model:
+        return None  # nothing reliable yet: try again on the next prompt or subagent
+    state["stale_checked"] = True
+    want = stale_model(model, config_text)
+    if not want:
+        return None
+    return (f"home-office: this session runs on {model}, an older generation; the current one is "
+            f"{want}. Switch with /model {want} (in the desktop app, the model picker).",
+            f"[home-office] This session runs on {model}, an older model generation; the current one "
+            f"of its family is {want}. Tell the user once, in their language, to switch (/model {want}, "
+            f"or the desktop app's model picker). Every session you start with start_session must pass "
+            f"`model` (the full id of roles.conductor's model for conductor sessions, else {want} or "
+            f"the current id of the family it needs: `ho.py models`), never inherit this one. Then do "
+            f"what they asked.")
+
+
 def state_path(session_id: str) -> str:
     base = os.environ.get("CLAUDE_PLUGIN_DATA") or tempfile.gettempdir()
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", session_id or "unknown")
@@ -153,6 +184,17 @@ def main() -> None:
     cap = cap_from(config_text)
     spath = state_path(data.get("session_id"))
     state = load_state(spath)
+
+    if not state.get("stale_checked"):
+        warning = model_warning(data, config_text, state)
+        if state.get("stale_checked"):
+            save_state(spath, state)
+        if warning:
+            emit({"systemMessage": warning[0],
+                  "hookSpecificOutput": {"hookEventName": event, "additionalContext": warning[1]}})
+            return
+    if event == "SessionStart":
+        return
     kind = session_kind(data, state)
     if state.get("kind") != kind:
         state["kind"] = kind

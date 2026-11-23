@@ -51,7 +51,7 @@ The harness stays light: `ho.py weight` measures what sessions load, `close` mov
 
 ## Guards
 
-The workflow's rules are enforced by hooks inside active task worktrees: edits outside the TASK's file list or forbidden by the project's `guards` are blocked (deletions only for the files the TASK lists under `Delete:`), an executor cannot finish with failing checks (after the repo's `prepare` commands, e.g. code generators), and sessions are told to close when they reach the context cap. Conductor sessions are also cut on purpose: after the PLAN is approved and after every `limits.tasks_per_session` TASKs (default 2), continuing with `/home-office:resume`. See [`core/WORKFLOW.md`](core/WORKFLOW.md#guards-hooks).
+The workflow's rules are enforced by hooks inside active task worktrees: edits outside the TASK's file list or forbidden by the project's `guards` are blocked (deletions only for the files the TASK lists under `Delete:`), an executor cannot finish with failing checks (after the repo's `prepare` commands, e.g. code generators), and sessions are told to close when they reach the context cap and warned once when they run on an older model generation than the current one. Every session the plugin starts passes its `model` explicitly (`ho.py models`), so none inherits an old one. Conductor sessions are also cut on purpose: after the PLAN is approved and after every `limits.tasks_per_session` TASKs (default 2), continuing with `/home-office:resume`. See [`core/WORKFLOW.md`](core/WORKFLOW.md#guards-hooks).
 
 ## Keeping features small
 

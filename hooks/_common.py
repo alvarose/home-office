@@ -625,6 +625,63 @@ def last_model(transcript_path: str, tail_bytes: int = 400_000):
     return None
 
 
+# ---------------------------------------------------------------- current models
+# The newest full model id of each Claude family. Keep this list up to date when a model ships;
+# a project can override any entry with `current_models: { opus: <id>, … }` in .home-office.yml.
+# Sessions started with start_session must pass one of these (or roles.conductor's) as `model`,
+# and the model hook warns once when a session runs on an older generation of its family.
+CURRENT_MODELS = {
+    "fable": "claude-fable-5-2",
+    "opus": "claude-opus-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "haiku": "claude-haiku-5-5",
+}
+FAMILIES = ("fable", "opus", "sonnet", "haiku")
+# claude-opus-5-5, claude-sonnet-4-5-20250929, claude-opus-5[1m]; old style claude-3-5-sonnet-20241022.
+# A minor version has 1-2 digits, so an 8-digit date suffix is never read as one.
+NEW_ID_RE = re.compile(r"claude-(fable|opus|sonnet|haiku)-(\d{1,2})(?:[-.](\d{1,2}))?(?!\d)")
+OLD_ID_RE = re.compile(r"claude-(\d{1,2})(?:[-.](\d{1,2}))?-(fable|opus|sonnet|haiku)\b")
+CURRENT_RE = re.compile(r"^current_models\s*:\s*\{([^}\n]*)\}", re.MULTILINE)
+
+
+def model_version(model_id: str):
+    """(family, (major, minor)) of a full Claude model id, or None (aliases like `opus`, others)."""
+    text = (model_id or "").lower()
+    m = NEW_ID_RE.search(text)
+    if m:
+        return m.group(1), (int(m.group(2)), int(m.group(3) or 0))
+    m = OLD_ID_RE.search(text)
+    if m:
+        return m.group(3), (int(m.group(1)), int(m.group(2) or 0))
+    return None
+
+
+def current_models(config_text: str = "") -> dict:
+    """family -> newest full id: the plugin's list, overridden by `current_models:` in the config."""
+    models = dict(CURRENT_MODELS)
+    m = CURRENT_RE.search(config_text or "")
+    for key, value in re.findall(r"([\w-]+)\s*:\s*['\"]?([\w.\[\]-]+)", m.group(1) if m else ""):
+        if key.lower() in FAMILIES and model_version(value):
+            models[key.lower()] = value
+    return models
+
+
+def full_model_id(name: str, config_text: str = "") -> str:
+    """A role's model (`sonnet`, `opus`, or a full id) as a full id; unknown names come back as they are."""
+    name = (name or "").strip()
+    return current_models(config_text).get(name.lower(), name)
+
+
+def stale_model(model_id: str, config_text: str = ""):
+    """The current id of the family when `model_id` is an older generation of it, else None."""
+    have = model_version(model_id)
+    if not have:
+        return None
+    want_id = current_models(config_text).get(have[0])
+    want = model_version(want_id) if want_id else None
+    return want_id if want and have[1] < want[1] else None
+
+
 def session_start(transcript_path: str):
     """Epoch seconds of the first timestamp in a session transcript, or None."""
     if not transcript_path or not os.path.isfile(transcript_path):
