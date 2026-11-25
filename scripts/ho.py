@@ -28,6 +28,9 @@
   models      the newest full model id of each Claude family (plugin list, overridden by the
               config's `current_models`) and each role's model as a full id: the `model` every
               start_session passes, so a new session never inherits the launching session's model
+  close-ready whether a finished feature may close itself (`close: card | auto`): no TASK open, every
+              worktree committed, no merge conflict, and only pushes, merges or deploy checks
+              still waiting in the inbox
   context     print the context size of a session transcript (debugging)
 
 Usage examples (paths are absolute):
@@ -1212,6 +1215,56 @@ def cmd_maturity(a) -> None:
                                for k in keys}})
 
 
+# ---------------------------------------------------------------- close-ready
+# Whether a finished feature may close itself (`close: card` proposes it, `auto` runs it): the mechanical part. Whether every
+# TASK is done and the review left nothing to fix is read from TASKS.md / REVIEW.md by the model.
+USER_WAIT_KINDS = ("push", "merge", "deploy-check")  # the user's own actions: they may stay open
+
+
+def cmd_close_ready(a) -> None:
+    config, text = config_text(a)
+    blockers, worktrees = [], {}
+    for raw in a.worktree or []:
+        wt = os.path.abspath(raw)
+        info = {"active_task": False, "dirty": [], "conflict": False}
+        if not git_dir(wt):
+            blockers.append(f"{wt}: not a git worktree")
+            worktrees[wt] = {**info, "error": "not a git worktree"}
+            continue
+        scope = load_scope(wt)
+        if scope:
+            info["active_task"] = True
+            blockers.append(f"{wt}: TASK still open ({scope.get('task')}); close it with task-end")
+        st = git(wt, "status", "--porcelain")
+        lines = [ln for ln in (st.stdout or "").splitlines() if ln.strip()]
+        info["dirty"] = [ln[3:] for ln in lines][:20]
+        gd = git(wt, "rev-parse", "--git-dir").stdout.strip()
+        gd = gd if os.path.isabs(gd) else os.path.join(wt, gd)
+        info["conflict"] = os.path.exists(os.path.join(gd, "MERGE_HEAD")) or             any(ln[:2] in ("UU", "AA", "DD", "AU", "UA", "DU", "UD") for ln in lines)
+        if info["conflict"]:
+            blockers.append(f"{wt}: merge in progress or unmerged files")
+        elif lines:
+            blockers.append(f"{wt}: {len(lines)} uncommitted change(s); everything must be committed")
+        worktrees[wt] = info
+    a.config = config
+    data = load_waiting(os.path.join(work_dir(config), "waiting.md"))
+    now = datetime.now().replace(second=0, microsecond=0)
+    rows = [r for r in wait_rows(data, a, now)
+            if r["state"] == "open" or (r["state"] == "answered" and r.get("unacted"))]
+    waits = []
+    for r in rows:
+        mine = r["state"] == "open" and r["kind"] in USER_WAIT_KINDS
+        waits.append({"id": r["id"], "kind": r["kind"], "state": r["state"], "users": mine})
+        if not mine:
+            what = "answered, not acted on" if r["state"] != "open" else f"open {r['kind']}"
+            blockers.append(f"{r['id']}: {what}; only pushes, merges and deploy checks may wait")
+    mode = (top_value(text, "close", "card") or "card").lower()
+    out({"ok": True, "feature": a.feature, "close": mode, "ready": not blockers,
+         "blockers": blockers, "worktrees": worktrees, "waits": waits,
+         "judgement": "also check: every TASK in TASKS.md done, gate 3 accepted, no high or medium "
+                      "finding left to fix in REVIEW.md, no low finding the user asked to fix"})
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="ho.py", description="home-office conductor helper")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1338,6 +1391,12 @@ def main() -> None:
         x.add_argument("--feature", help="only rows whose work starts with this, e.g. 07-x")
         x.add_argument("--since", help="only rows that started on or after YYYY-MM-DD")
     wt.set_defaults(fn=cmd_waiting)
+
+    cr = sub.add_parser("close-ready", help="may a finished feature close itself (close: card | auto)?")
+    cr.add_argument("--feature", required=True, help="NN-name")
+    cr.add_argument("--worktree", action="append", help="each of the feature's worktrees (repeat)")
+    cr.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
+    cr.set_defaults(fn=cmd_close_ready)
 
     g = sub.add_parser("weight", help="what every session loads, against limits.file_tokens / log_rows / waiting_days")
     g.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")

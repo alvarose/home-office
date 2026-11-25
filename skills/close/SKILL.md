@@ -1,12 +1,13 @@
 ---
 name: close
-description: Close a home-office session or feature. Writes the STATE.md handoff, decisions and board, proposes commits and merges (the user does them), cleans up worktrees after merge and flags knowledge to promote. Use only when the user invokes /home-office:close.
-disable-model-invocation: true
+description: Close a home-office session or feature. Writes the STATE.md handoff, decisions and board, proposes commits and merges (the user does them), cleans up worktrees after merge and flags knowledge to promote. Use when the user invokes /home-office:close, or when a home-office feature session has nothing left to do (gate 3 accepted, nothing to fix, everything committed, `ho.py close-ready` ready) and the user said yes to the proposal to close (`close: card`, the default) or the config has `close: auto`.
 ---
 
 # /home-office:close
 
 Leave everything so that a fresh session can continue from files alone. Then the session ends.
+
+**Run by the session itself**: with `close: card` (the default) after the user says yes to the one-click proposal, with `auto` without asking (`ask`: only the user runs it). Only when the feature is finished and nothing is left for the session to do (`new` § "Close → gate 4"): every TASK done, gate 3 accepted, no high or medium finding left to fix and no low one the user asked to fix (the rest are in `REVIEW.md` and the backlog), and `ho.py close-ready` answers `ready: true` (no TASK open, every worktree committed, no merge conflict, only pushes, merges or deploy checks waiting). Never at the context cap or the tuning limit: those are hand-overs. Ask exactly what this procedure asks when the user runs it (merges, archiving with `archive: ask`) and nothing more.
 
 Every git command you give the user (commit, merge, push, worktree removal, branch deletion) names its repo: `git -C <absolute repo path> …`, one command per code block. The session runs in the work folder, not in the repos, so a bare `git …` fails there.
 

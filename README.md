@@ -27,7 +27,7 @@ From a local clone: `/plugin marketplace add <path to the clone>`.
 | `/home-office:init` | Set up the office for a project (once) |
 | `/home-office:new "<task>"` | Start new work; a classifier picks the short lane or the feature lane |
 | `/home-office:resume [NN]` | Resume a feature in a fresh session from its `STATE.md` (`--tuning` for interactive tuning) |
-| `/home-office:close` | Write the handoff, decisions and board; propose commits and merges |
+| `/home-office:close` | Write the handoff, decisions and board; propose commits and merges. With `close: card` (default) a feature session proposes it as a one-click button once nothing is left to do (`ho.py close-ready`) and runs it on your yes |
 | `/home-office:status` | Waiting-for-you block first (by kind, with age and the exact action; answer several at once), then features in flight, gates, blockers, stalled work |
 | `/home-office:models` | Show or change the tool and model of each department |
 | `/home-office:sources` | List, add, edit or remove knowledge sources |

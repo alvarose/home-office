@@ -77,6 +77,10 @@ limits:
 
 handover: card                # at a planned cut, in the Claude desktop app: card = propose the next session
                               # (one click); auto = start it, unless the next step waits for you
+close: card                   # when a feature is finished (every TASK done, gate 3 accepted, nothing left to
+                              # fix, everything committed: ho.py close-ready; only your pushes and merges may
+                              # wait): card = the session proposes closing with a one-click button and closes
+                              # on your yes; auto = it closes at once; ask = you run /home-office:close
 archive: ask                  # finished sessions in the Claude desktop app: ask = ask once before archiving; auto = archive
 commit: ask                   # TASKs that pass their gate, on the feature branch (never base, never push):
                               # ask = one question per session; auto = commit each TASK when it passes
