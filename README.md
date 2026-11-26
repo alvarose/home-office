@@ -20,6 +20,8 @@ The plugin contains nothing about any particular project. Everything project-spe
 
 From a local clone: `/plugin marketplace add <path to the clone>`.
 
+First time? [`INSTALL.md`](INSTALL.md) walks through requirements, installation, setting up a project and the first piece of work.
+
 ## Commands
 
 | Command | What it does |
@@ -92,4 +94,4 @@ MIT
 
 ## Status
 
-0.3.0 — agents, commands, templates, guards (scope guard, checks gate, context cap) and per-project document language. Not yet included: the Codex adapter.
+0.4.0 — agents, commands, templates, guards (scope guard, checks gate, context cap), per-project document language, waiting inbox, file claims between parallel features, check cache and harness weight. See [`CHANGELOG.md`](CHANGELOG.md). Not yet included: the Codex adapter.
