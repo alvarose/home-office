@@ -28,6 +28,9 @@
   models      the newest full model id of each Claude family (plugin list, overridden by the
               config's `current_models`) and each role's model as a full id: the `model` every
               start_session passes, so a new session never inherits the launching session's model
+  drift       STATE.md files against Git (branches merged or gone, leftover worktrees), the board
+              (done features still listed, features in flight missing) and the streams (progress
+              copied to the board); a Status without one of the fixed words
   close-ready whether a finished feature may close itself (`close: card | auto`): no TASK open, every
               worktree committed, no merge conflict, and only pushes, merges or deploy checks
               still waiting in the inbox
@@ -1215,6 +1218,148 @@ def cmd_maturity(a) -> None:
                                for k in keys}})
 
 
+# ---------------------------------------------------------------- drift
+# STATE.md files, the board, the streams and Git drift apart when a session forgets one of them.
+# `drift` finds it; status shows it, close and task fix what they touched.
+STATUS_WORDS = ("planning", "executing", "review", "merging", "done", "parked")
+PARKED_WORDS = ("parked", "aplazada", "aplazado", "pausada", "pausado", "suspendue", "zurückgestellt")
+FEATURE_LINK_RE = re.compile(r"features/(\d{2,3}-[A-Za-z0-9._-]+)")
+FRACTION_RE = re.compile(r"\b(\d+)\s*(?:of|de|sur|von|/)\s*(\d+)\b")
+
+
+STATUS_LABELS = ("status", "estado", "statut", "état", "etat", "zustand")
+BRANCH_LABELS = ("branches", "ramas", "zweige")
+NONE_WORDS = ("none", "ninguna", "ninguno", "aucune", "aucun", "keine", "keiner")
+
+
+def state_header(path: str) -> list:
+    """[status, last session, branches] of a STATE.md header: by label when it is a known one
+    (labels may be translated, and older files put other lines first), else by position."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            head = [next(fh, "") for _ in range(12)]
+    except OSError:
+        return []
+    pairs = [(l.split(":", 1)[0].strip().lower(), l.split(":", 1)[1].strip()) for l in head
+             if re.match(r"^\s*[^:#|\n]{2,24}:", l) and not l.startswith("#")]
+    if not pairs:
+        return []
+    vals = [v for _, v in pairs]
+    status = next((v for k, v in pairs if k in STATUS_LABELS), vals[0])
+    branches = next((v for k, v in pairs if k in BRANCH_LABELS), vals[2] if len(vals) > 2 else "")
+    rest = [v for v in vals if v not in (status, branches)]
+    return [status, rest[0] if rest else "", branches]
+
+
+def first_word(value: str) -> str:
+    words = re.findall(r"[^\W\d_]+", (value or "").lower())
+    return words[0] if words else ""
+
+
+def repo_base(text: str, key: str) -> str:
+    m = re.search(r"^[ \t]{2}" + re.escape(key) + r":\s*\{[^\n]*\bbase\s*:\s*['\"]?([\w./-]+)", text, re.MULTILINE)
+    return m.group(1) if m else (top_value(text, "base_branch", "main") or "main")
+
+
+def cmd_drift(a) -> None:
+    config, text = config_text(a)
+    base_dir, work = os.path.dirname(config), work_dir(config)
+    repos = config_repos(text, base_dir)
+    wt_root = os.path.normpath(os.path.join(base_dir, top_value(text, "worktrees", "../.worktrees")))
+    board_path = os.path.join(work, top_value(text, "board", "BOARD.md"))
+    try:
+        with open(board_path, encoding="utf-8") as fh:
+            board = fh.read()
+    except OSError:
+        board = ""
+    on_board = {}
+    for line in board.splitlines():
+        if line.strip().startswith("|"):
+            for name in FEATURE_LINK_RE.findall(line):
+                on_board.setdefault(name, []).append(line.strip()[:160])
+    issues, features = [], {}
+
+    def rel(path):
+        return os.path.relpath(path, base_dir).replace(os.sep, "/") if path else None
+
+    def add(kind, detail, fix, path, **who):
+        issues.append({**who, "kind": kind, "detail": detail, "fix": fix, "file": rel(path)})
+
+    fdir = os.path.join(work, "features")
+    names = sorted(os.listdir(fdir)) if os.path.isdir(fdir) else []
+    if a.feature:
+        names = [n for n in names if n.startswith(a.feature)]
+    for name in names:
+        spath = os.path.join(fdir, name, "STATE.md")
+        if not os.path.isfile(spath):
+            continue
+        head = state_header(spath)
+        word = first_word(head[0] if head else "")
+        done, parked = word in DONE_WORDS, word in PARKED_WORDS
+        features[name] = {"status_word": word, "done": done, "parked": parked}
+        if not done and not parked and word not in STATUS_WORDS:
+            add("status_word", f"Status starts with '{word or '(empty)'}'",
+                f"start the Status line with one of {', '.join(STATUS_WORDS)}, then ' — ' and the text",
+                spath, feature=name)
+        rows = on_board.get(name, [])
+        if done and rows:
+            add("board_done_row", f"done, but {len(rows)} board row(s) still list it",
+                "remove its rows and notes from the board", board_path, feature=name)
+        if not rows and word in STATUS_WORDS[:4]:
+            add("board_missing_row", "in flight, but no board row links it",
+                "add its row under its project (STATE.md `Project:` line)", board_path, feature=name)
+        branches = head[2] if len(head) > 2 and not parked and first_word(head[2]) not in NONE_WORDS else ""
+        for branch in sorted(set(b.rstrip(".,;)`") for b in re.findall(r"feature/[A-Za-z0-9._/-]+", branches))):
+            for key in [k for k in repos if re.search(r"(?<![\w-])" + re.escape(k) + r"(?![\w-])", branches)]:
+                path = repos[key]["path"]
+                if not git_dir(path):
+                    continue
+                if git(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}").returncode != 0:
+                    if not done:
+                        add("branch_gone", f"{branch} no longer exists in {key}",
+                            "update Branches, Status and Next (merged? abandoned?)", spath, feature=name)
+                    continue
+                base = repo_base(text, key)
+                if not done and git(path, "merge-base", "--is-ancestor", branch, base).returncode == 0:
+                    add("branch_merged", f"{branch} is already merged into {base} in {key}",
+                        "the feature moved on: update Status, Next and the board row", spath, feature=name)
+        if done:
+            for key in repos:
+                wt = os.path.join(wt_root, key, name)
+                if os.path.isdir(wt):
+                    add("worktree_left", f"done, but its worktree in {key} still exists",
+                        f"offer ho.py worktree-remove for {wt}, or fix Status", spath, feature=name)
+    sdir = os.path.join(work, "streams")
+    for sname in (sorted(os.listdir(sdir)) if os.path.isdir(sdir) and not a.feature else []):
+        spath = os.path.join(sdir, sname, "stream.md")
+        if not os.path.isfile(spath):
+            continue
+        with open(spath, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        road = next((i for i, l in enumerate(lines) if re.match(r"^\|\s*#\s*\|", l)), None)
+        if road is None:
+            continue
+        rows = table_split(lines[road:])[2]
+        words = [first_word(r.strip().strip("|").split("|")[-1]) for r in rows]
+        total, done_n = len(words), sum(1 for w in words if w in DONE_WORDS)
+        for line in board.splitlines():
+            if f"streams/{sname}" not in line:
+                continue
+            m = FRACTION_RE.search(line)
+            if m and (int(m.group(1)), int(m.group(2))) != (done_n, total):
+                add("stream_count", f"board says {m.group(1)} of {m.group(2)}, stream.md has {done_n} of {total} done",
+                    "do not copy a stream's progress to the board: link stream.md", board_path, stream=sname)
+    for name in sorted(set(on_board) - set(features)):
+        if not a.feature or name.startswith(a.feature):
+            add("board_unknown", "a board row links a feature folder with no STATE.md",
+                "remove the row or fix the link", board_path, feature=name)
+    by_kind = {}
+    for i in issues:
+        by_kind[i["kind"]] = by_kind.get(i["kind"], 0) + 1
+    out({"ok": True, "board": rel(board_path), "features": len(features), "count": len(issues),
+         "by_kind": by_kind, "issues": issues})
+
+
 # ---------------------------------------------------------------- close-ready
 # Whether a finished feature may close itself (`close: card` proposes it, `auto` runs it): the mechanical part. Whether every
 # TASK is done and the review left nothing to fix is read from TASKS.md / REVIEW.md by the model.
@@ -1391,6 +1536,11 @@ def main() -> None:
         x.add_argument("--feature", help="only rows whose work starts with this, e.g. 07-x")
         x.add_argument("--since", help="only rows that started on or after YYYY-MM-DD")
     wt.set_defaults(fn=cmd_waiting)
+
+    dr = sub.add_parser("drift", help="STATE.md files, the board, the streams and Git out of step")
+    dr.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
+    dr.add_argument("--feature", help="only this feature (NN-name or NN)")
+    dr.set_defaults(fn=cmd_drift)
 
     cr = sub.add_parser("close-ready", help="may a finished feature close itself (close: card | auto)?")
     cr.add_argument("--feature", required=True, help="NN-name")

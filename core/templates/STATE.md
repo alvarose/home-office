@@ -1,6 +1,6 @@
 # NN-name · STATE
 
-Status: <phase> — TASK x of y
+Status: <planning | executing | review | merging | done | parked> — <where it stands, e.g. TASK x of y>
 Last session: <date>, <agent>
 Branches: feature/NN-name in <repos>
 Rework: 0

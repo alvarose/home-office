@@ -44,7 +44,7 @@ Everything that waits on you (decisions, pushes, merges, staging checks) is kept
 
 Parallel features in the same repo claim their files (`ho.py claims`), edit each hotspot (`hotspots` in the config) one feature at a time, and merge the base into their branch early (`ho.py sync`); see ["Parallel features"](core/WORKFLOW.md#parallel-features).
 
-The harness stays light: `ho.py weight` measures what sessions load, `close` moves old log and inbox rows to `<work>/archive/` and keeps the board to what is live, and mature repos (`ho.py maturity`) send more work to the short lane; see ["Harness weight"](core/WORKFLOW.md#harness-weight).
+The harness stays light: `ho.py weight` measures what sessions load, `close` moves old log and inbox rows to `<work>/archive/` and keeps the board to what is live, and mature repos (`ho.py maturity`) send more work to the short lane; see ["Harness weight"](core/WORKFLOW.md#harness-weight). `ho.py drift` finds `STATE.md` files, the board and Git out of step; `status` shows it and `close` and `task` fix it.
 
 ## Requirements
 

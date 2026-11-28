@@ -54,6 +54,8 @@ Mechanical changes are made in the repo's current checkout, like the short lane:
 - **Problems:** say what is left to do. If it is real work, offer `/home-office:new` for it.
 
 ## 4. Record
+**The feature it touched.** If the job concerns a feature (its number or name is in the job, it acted on a waiting row of one, or it merged, published, deployed or removed worktrees of one), update that feature's `STATE.md` (the status word, "Done", "Next", "Blocked"; `done` and its board rows removed when this was its last step) and its board row now, then run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" drift --feature NN-name` and fix what it lists. A task never leaves a feature's state only in the log.
+
 Append one line to `<work>/<log>`, in `language`: date, project (empty if none), repos, what was checked or changed, result. With a project, add the same line to "Tasks done" in `<work>/projects/<repo>/project.md` (create the page from the `project.md` template if missing).
 
 ## 5. Finish
