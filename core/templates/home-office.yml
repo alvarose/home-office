@@ -61,7 +61,8 @@ limits:
   tuning_requests: 10
   parallel_warning: 4
   task_attempts: 2
-  tasks_per_session: 2        # TASKs a conductor session executes before it closes and hands over
+  cut_at: 70                  # % of context_tokens: past it, the context hook tells the conductor to cut after the TASK in hand
+  tasks_per_session: 6        # ceiling of TASKs per conductor session; the cut usually comes first, from cut_at
   tasks_per_feature: 8        # over this, the architect proposes trimming or splitting, and you hear it before gate 2
   review_rounds: 1            # review rounds per feature; one more only to check fixes of high or medium findings
                               # (low findings go to REVIEW.md and the project backlog, never to new TASKs unasked)
@@ -77,6 +78,7 @@ limits:
 
 handover: card                # at a planned cut, in the Claude desktop app: card = propose the next session
                               # (one click); auto = start it, unless the next step waits for you
+                              # (auto works only where you typed: a hand-over session's own hand-over is a card)
 close: card                   # when a feature is finished (every TASK done, gate 3 accepted, nothing left to
                               # fix, everything committed: ho.py close-ready; only your pushes and merges may
                               # wait): card = the session proposes closing with a one-click button and closes

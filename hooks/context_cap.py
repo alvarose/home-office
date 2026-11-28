@@ -2,6 +2,9 @@
 
 Acts only in sessions opened under a folder that has a `.home-office.yml`.
 Reads the size of the current context from the session transcript and:
+  - in flow sessions, at `limits.cut_at` % of `limits.context_tokens` (default 70 %): tells the
+    conductor once that the planned cut point is reached (finish the TASK in hand, then cut);
+    a conductor cuts there or after `limits.tasks_per_session` TASKs, whichever comes first;
   - at 80 % of `limits.context_tokens` (default 150,000): warns once;
   - at 100 %: warns the user and tells the model to wrap up with /home-office:close
     (on every prompt; after tools, only once).
@@ -35,6 +38,8 @@ from _common import (emit, find_up, last_context_tokens, last_model,  # noqa: E4
 
 DEFAULT_CAP = 150_000
 DEFAULT_LOOSE_HOURS = 12
+DEFAULT_CUT_AT = 70  # % of the cap: the planned cut point of a conductor session
+CUT_RE = re.compile(r"^\s*cut_at\s*:\s*([0-9]+)", re.MULTILINE)
 CAP_RE = re.compile(r"^\s*context_tokens\s*:\s*([0-9_]+)", re.MULTILINE)
 INLINE_CAP_RE = re.compile(r"context_tokens\s*:\s*([0-9_]+)")
 LOOSE_RE = re.compile(r"loose_session_hours\s*:\s*([0-9.]+)")
@@ -60,6 +65,16 @@ def cap_from(text: str) -> int:
         return int(m.group(1).replace("_", "")) if m else DEFAULT_CAP
     except ValueError:
         return DEFAULT_CAP
+
+
+def cut_at(text: str) -> int:
+    """The planned cut point, in % of the cap (1–100; default 70)."""
+    m = CUT_RE.search(text)
+    try:
+        value = int(m.group(1)) if m else DEFAULT_CUT_AT
+    except ValueError:
+        value = DEFAULT_CUT_AT
+    return value if 1 <= value <= 100 else DEFAULT_CUT_AT
 
 
 def loose_hours(text: str) -> float:
@@ -209,9 +224,30 @@ def main() -> None:
             return
 
     tokens = last_context_tokens(data.get("transcript_path"))
-    if not tokens or tokens < 0.8 * cap:
+    if not tokens:
         return
     k = f"{tokens // 1000}k"
+    point = cut_at(config_text)
+    if kind == "flow" and tokens >= point / 100 * cap and tokens < cap and not state.get("cut"):
+        state["cut"] = True
+        if tokens >= 0.8 * cap:
+            state["soft"] = True  # one message, not two
+        save_state(spath, state)
+        emit({
+            "systemMessage": f"home-office: this session is at {k} tokens, past its planned cut point "
+                             f"({point} % of the {cap // 1000}k cap). It hands over after the TASK in hand.",
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "additionalContext": (
+                    f"[home-office] Planned cut point reached: context is {tokens} tokens, at or over "
+                    f"limits.cut_at ({point} % of the {cap} cap). Do not open another TASK or start a "
+                    f"review round in this session: finish the step in hand (task-end, commit), then "
+                    f"do the planned cut (STATE.md, the board row, the hand-over)."),
+            },
+        })
+        return
+    if tokens < 0.8 * cap:
+        return
 
     if tokens >= cap:
         if event != "UserPromptSubmit" and state.get("hard"):

@@ -17,6 +17,10 @@ Inside an active task it denies:
     exact path with `rm`, `unlink`, `git rm` or `Remove-Item`.
 The checks gate (SubagentStop) remains the backstop for anything this misses.
 
+Only the session that opened the TASK (`session` in the scope, from task-start's
+CLAUDE_CODE_SESSION_ID) and its executors are held to it. Another session working in the same
+checkout (a `task` in a repo's main checkout, a parallel job) gets a warning instead of a block.
+
 Fail-open: on any error it allows the call.
 """
 
@@ -232,12 +236,35 @@ def planned_delete(words, base: str, wt: str, scope: dict):
     return True
 
 
+def other_session(scope: dict, data: dict) -> bool:
+    """The TASK was opened by another session (its executors share the opener's session id)."""
+    mine, owner = data.get("session_id"), scope.get("session")
+    return bool(mine and owner and mine != owner)
+
+
+def warn_other(scope: dict, what: str) -> None:
+    """Another session's TASK is open where this session works: warn, do not block."""
+    task = scope.get("task") or "a TASK"
+    emit({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "additionalContext": (
+            f"[home-office] Another session has {task} open in this checkout ({what}). This call is "
+            f"not blocked, but files you change here count as out of scope in that TASK's gate. Do "
+            f"not touch its files ({', '.join((scope.get('files') or [])[:8]) or 'see its TASK'}); "
+            f"prefer a worktree of your own, or wait until that session runs task-end."),
+    }})
+
+
 def check_bash(data: dict) -> None:
     command = (data.get("tool_input") or {}).get("command") or ""
     if not command:
         return
     wt, scope = active_task_in_command(command, data.get("cwd") or "")
     if not wt:
+        return
+    if other_session(scope, data):
+        if any(p.search(command) for p, _ in WRITE_PATTERNS) or SCRIPT_WRITE.search(command):
+            warn_other(scope, "Bash")
         return
     task = scope.get("task") or "a TASK"
     base = data.get("cwd") or wt
@@ -294,6 +321,9 @@ def main() -> None:
         return
     scope = load_scope(worktree)
     if not scope:
+        return
+    if other_session(scope, data):
+        warn_other(scope, f"edit of {posix_rel(abs_path, worktree)}")
         return
 
     rel = posix_rel(abs_path, worktree)

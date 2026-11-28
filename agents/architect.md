@@ -16,7 +16,7 @@ From `brief.md` (and the user's request), write `SPEC.md` from its template: goa
 
 **Size, in the header** (the user sees it when approving the SPEC):
 - `Unblocks:` what this feature makes possible next (a release, a cut, another feature, a stream step), or "nothing on its own". If it unblocks nothing, say so plainly: the user may decide it can wait.
-- `Estimate:` the TASKs you expect the PLAN to need and the sessions they take: execution sessions = TASKs ÷ `limits.tasks_per_session`, rounded up, plus the planning session. Write the limit the conductor gives you (`limits.tasks_per_feature`, default 8).
+- `Estimate:` the TASKs you expect the PLAN to need and the sessions they take: execution sessions ≈ TASKs ÷ 5 (a session cuts by context, `limits.cut_at`, and at most at `limits.tasks_per_session` TASKs), rounded up, plus the planning session. Write the limit the conductor gives you (`limits.tasks_per_feature`, default 8).
 - If the estimate is over that limit, add a decision needed: **trim** (what moves out of scope, to the project's backlog) or **split** (what a first feature within the limit delivers, and what goes to a later one), with your recommendation.
 - A SPEC made of minor fixes (audit findings, cleanups, style) keeps only what must ship together; the rest goes out of scope as backlog, not into this feature.
 
@@ -37,7 +37,7 @@ The SPEC is approved. Write `PLAN.md` and `TASKS.md` from their templates:
 - **Waits** (PLAN section "Waits"): list every step that needs the user — a decision, a push, a merge, a check on staging, an environment or data they must provide — with when it comes up. The conductor files each as a row of the waiting inbox when it happens, so name the exact action (git commands as `git -C <repo> …`).
 - **Order around waits.** Put the TASKs that need nothing from the user first, and the ones that depend on an answer last or isolated (no other TASK depends on them), so the work can go on while the user answers. A TASK that needs the user gets a `Waits: <what>` line in `TASKS.md` (`—` for the rest). Never make an independent TASK depend on a waiting one just for neatness; when two orders are equivalent, take the one with fewer TASKs behind a wait.
 - Files written by the repo's `prepare` commands (generated code) are never listed: they are regenerated before the checks.
-- Size each TASK so a cheap model finishes it in one run: the conductor executes only `limits.tasks_per_session` TASKs per session.
+- Size each TASK so a cheap model finishes it in one run: a conductor session holds about five TASKs before its planned cut.
 - **Feature limit.** Count the TASKs against `limits.tasks_per_feature` (the conductor gives it; default 8). Do not pad: low-value extras (polish, nice-to-have tests, cleanups the SPEC does not require) stay out. If the SPEC's scope still needs more TASKs than the limit, write the full `TASKS.md` and propose in your summary either **trim** (which TASKs drop, and why the SPEC still holds without them) or **split** (which TASKs form a first feature within the limit, what it delivers on its own, and what the second one covers). Recommend one.
 - **Fix TASKs after a review** (if the conductor asks you for them, with the review's findings): only for the high and medium findings the user approved, appended to `TASKS.md`, as few as possible. Never turn low findings into TASKs unless the conductor says the user asked for them.
 

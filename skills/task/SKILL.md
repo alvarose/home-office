@@ -41,7 +41,7 @@ Follow `new` § 0 (`${CLAUDE_PLUGIN_ROOT}/skills/new/SKILL.md`): config in the c
    - `--deny` comes from the `guards` that apply to the repo.
    - `--delete` is only for paths the request names, after confirming the list with the user.
 3. Launch `home-office:implementer` (model from the role that matches the repo, else `roles.backend`). The first line of its prompt is `HOME-OFFICE-WORKTREE: <repo>`; then give it the change, the relevant knowledge sections, `hard_rules`, the paths it may delete, the prepare commands and checks, and the check command line `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" check --worktree <repo> --cmd "<check>"` (path resolved): full checks only through it, filtered tests while iterating.
-4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-end --worktree <repo> --report <the implementer's status>` and keep `gate` (always `pass` or `fail`), `touched` and `problems`.
+4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" task-end --worktree <repo> --report <the implementer's status>` and keep `gate` (always `pass` or `fail`), `touched` and `problems`. Run git commands (add, commit) in a later call, never chained after `task-end` in the same command: the scope guard checks the whole command while the task is still open. Another session's task open in the same checkout only warns you (the guard holds only the session that opened it); do not touch its files.
 
 Mechanical changes are made in the repo's current checkout, like the short lane: no feature branch and no worktree.
 
@@ -54,7 +54,9 @@ Mechanical changes are made in the repo's current checkout, like the short lane:
 - **Problems:** say what is left to do. If it is real work, offer `/home-office:new` for it.
 
 ## 4. Record
-**The feature it touched.** If the job concerns a feature (its number or name is in the job, it acted on a waiting row of one, or it merged, published, deployed or removed worktrees of one), update that feature's `STATE.md` (the status word, "Done", "Next", "Blocked"; `done` and its board rows removed when this was its last step) and its board row now, then run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" drift --feature NN-name` and fix what it lists. A task never leaves a feature's state only in the log.
+**Waiting rows.** Before acting on a row of the inbox (the job names `W-NNN`, or it does a push, merge, deploy or check that a row asks for), take it: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" waiting take W-NNN --by "<this session's title>"` (a row taken for this session by the one that started it answers `ok: true`). If another session holds it, stop that part, say so in one line and do the rest. When done: `waiting answer` (if not answered yet) and `waiting acted`.
+
+**The feature it touched.** If the job concerns a feature (its number or name is in the job, it acted on a waiting row of one, or it merged, published, deployed or removed worktrees of one), update that feature's `STATE.md` (the status word, "Done", "Next", "Blocked"; `done` when this was its last step), then run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" board --write` (it rebuilds the feature rows from the STATE.md files; never edit them by hand), then run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ho.py" drift --feature NN-name` and fix what it lists. A task never leaves a feature's state only in the log.
 
 Append one line to `<work>/<log>`, in `language`: date, project (empty if none), repos, what was checked or changed, result. With a project, add the same line to "Tasks done" in `<work>/projects/<repo>/project.md` (create the page from the `project.md` template if missing).
 

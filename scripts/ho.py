@@ -18,8 +18,9 @@
               and refuses a hotspot another feature holds (`--hotspot`, unless --force)
   sync        merge the base branch into a feature worktree, early, only when it is clean and
               no TASK is open: up_to_date | merged | conflict (aborted, nothing changed)
-  waiting     the waiting inbox <work>/waiting.md: add | answer | acted | list | stats (ids and
-              timestamps are deterministic; answered rows are kept, they are the measurement)
+  waiting     the waiting inbox <work>/waiting.md: add | answer | acted | list | stats | take |
+              release (ids and timestamps are deterministic; answered rows are kept, they are the
+              measurement; `take` marks a row as handled by one session, in waiting.taken.json)
   weight      measure what every session loads (config, board, waiting inbox, indexes, project /
               stream / batch pages, open STATE.md files, the repos' CLAUDE.md / AGENTS.md with the
               files they import with `@path` lines) against limits; --rotate moves old log rows and old acted waiting rows to <work>/archive/
@@ -31,6 +32,12 @@
   drift       STATE.md files against Git (branches merged or gone, leftover worktrees), the board
               (done features still listed, features in flight missing) and the streams (progress
               copied to the board); a Status without one of the fixed words
+  resume-brief  what a resume session needs before its first TASK, in one call: STATE.md, the
+              next TASK's text, the feature's waiting rows, its worktrees (merged with their base
+              with --sync), the next hand-over title and the parts of the config a conductor uses
+  board       rebuild the board's feature rows from the STATE.md files (one per feature in flight
+              or parked under its project and stream, "touches" rows in the other projects of its
+              branches); everything else on the board is left as it is. Dry run unless --write
   close-ready whether a finished feature may close itself (`close: card | auto`): no TASK open, every
               worktree committed, no merge conflict, and only pushes, merges or deploy checks
               still waiting in the inbox
@@ -271,6 +278,10 @@ def cmd_task_start(a) -> None:
         "attempts": a.attempts,
         "check_timeout": a.check_timeout,
         "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+        # The session that opened it: the scope guard holds only that session (and its executors)
+        # to the TASK; another session working in the same checkout gets a warning, not a block.
+        "session": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
+        "base": a.base,
         "baseline": snapshot(wt),
         "gate": None,
         "gate_blocks": 0,
@@ -392,8 +403,33 @@ def cmd_task_end(a) -> None:
             pass
         release_claims(wt, scope.get("task"))
     save_last(wt, {**summary(scope), **{k: scope.get(k) for k in EXTRA}})
+    commit = commit_task(wt, scope, a) if a.commit and not a.keep else None
     out({"ok": True, **summary(scope), "active": bool(a.keep), "gate_by": scope["gate_by"],
-         "report": scope.get("report"), "rework": rework})
+         "report": scope.get("report"), "rework": rework, **({"commit": commit} if commit else {})})
+
+
+def commit_task(wt: str, scope: dict, a) -> dict:
+    """`task-end --commit "<msg>"`: commit the TASK's files on its feature branch, in the same call
+    that closes it (a separate `git commit` in the same Bash command would be checked against
+    the scope that is still open). Only with gate pass and report done (or no report)."""
+    if scope.get("gate") != "pass" or (a.report and a.report != "done"):
+        return {"done": False, "reason": f"gate {scope.get('gate')}, report {a.report or '-'}: nothing committed"}
+    branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if branch in ("HEAD", scope.get("base") or "", "main", "master") or not branch.startswith("feature/"):
+        return {"done": False, "reason": f"HEAD is {branch}: --commit only commits on a feature/ branch"}
+    files = scope.get("touched") or (scope.get("files", []) + scope.get("delete", []))
+    files = [f for f in files if f and not any(ch in f for ch in "*?[")]
+    if not files:
+        return {"done": False, "reason": "no files to commit"}
+    added = git(wt, "add", "-A", "--", *files)
+    if added.returncode != 0:
+        return {"done": False, "reason": (added.stderr or added.stdout).strip()[-400:]}
+    if git(wt, "diff", "--cached", "--quiet").returncode == 0:
+        return {"done": False, "reason": "nothing staged: the files have no changes"}
+    made = git(wt, "commit", "-q", "-m", a.commit)
+    if made.returncode != 0:
+        return {"done": False, "reason": (made.stderr or made.stdout).strip()[-400:]}
+    return {"done": True, "sha": git(wt, "rev-parse", "--short", "HEAD").stdout.strip(), "files": files}
 
 
 # Kept with the last result besides the summary, so a repeated task-end can answer and count once.
@@ -696,46 +732,52 @@ def cmd_claims(a) -> None:
          "claims": claims, "branches": branches})
 
 
-def cmd_sync(a) -> None:
-    wt = os.path.abspath(a.worktree)
+def sync_one(wt: str, base: str) -> dict:
+    """Merge `base` into a clean feature worktree with no TASK open. Returns the result object."""
+    wt = os.path.abspath(wt)
     if not git_dir(wt):
-        out({"ok": False, "status": "error", "error": f"not a git worktree: {wt}"}, 1)
+        return {"ok": False, "status": "error", "error": f"not a git worktree: {wt}"}
     branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     head = git(wt, "rev-parse", "HEAD").stdout.strip()
-    base_sha = git(wt, "rev-parse", "--verify", "--quiet", f"{a.base}^{{commit}}").stdout.strip()
-    res = {"worktree": wt, "branch": branch, "base": a.base}
+    base_sha = git(wt, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").stdout.strip()
+    res = {"worktree": wt, "branch": branch, "base": base}
 
     def refuse(reason, msg, **extra):
-        out({"ok": False, "status": "refused", "reason": reason, "message": msg, **res, **extra}, 1)
+        return {"ok": False, "status": "refused", "reason": reason, "message": msg, **res, **extra}
 
     if not base_sha:
-        out({"ok": False, "status": "error", "error": f"base branch not found: {a.base}", **res}, 1)
-    if branch in ("HEAD", a.base):
-        refuse("not_a_feature_branch", f"HEAD is {branch}: sync only runs on a feature branch")
+        return {"ok": False, "status": "error", "error": f"base branch not found: {base}", **res}
+    if branch in ("HEAD", base):
+        return refuse("not_a_feature_branch", f"HEAD is {branch}: sync only runs on a feature branch")
     if load_scope(wt):
-        refuse("task_open", "a TASK is open in this worktree; close it with task-end first")
+        return refuse("task_open", "a TASK is open in this worktree; close it with task-end first")
     dirty = changed_files(wt)
     if dirty:
-        refuse("dirty", "uncommitted changes in the worktree; commit them first", changes=dirty[:30])
+        return refuse("dirty", "uncommitted changes in the worktree; commit them first", changes=dirty[:30])
     if git(wt, "merge-base", "--is-ancestor", base_sha, head).returncode == 0:
-        out({"ok": True, "status": "up_to_date", "head": head, **res})
+        return {"ok": True, "status": "up_to_date", "head": head, **res}
     merged = git(wt, "merge", "--no-edit", base_sha)
     if merged.returncode == 0:
         new = git(wt, "rev-parse", "HEAD").stdout.strip()
         files = [f for f in git(wt, "diff", "--name-only", f"{head}..{new}").stdout.splitlines() if f]
-        out({"ok": True, "status": "merged", "head_before": head, "head": new,
-             "fast_forward": git(wt, "rev-parse", "--verify", "--quiet", "HEAD^2").returncode != 0,
-             "files": files, **res})
+        return {"ok": True, "status": "merged", "head_before": head, "head": new,
+                "fast_forward": git(wt, "rev-parse", "--verify", "--quiet", "HEAD^2").returncode != 0,
+                "files": files, **res}
     conflicts = [f for f in git(wt, "diff", "--name-only", "--diff-filter=U").stdout.splitlines() if f]
     if git(wt, "merge", "--abort").returncode != 0:  # no merge in progress: nothing to abort
         git(wt, "reset", "--merge")
     after = git(wt, "rev-parse", "HEAD").stdout.strip()
     clean = not changed_files(wt)
     if not conflicts:
-        out({"ok": False, "status": "error", "error": (merged.stderr or merged.stdout).strip(),
-             "head": after, "clean": clean, **res}, 1)
-    out({"ok": False, "status": "conflict", "files": conflicts, "aborted": True,
-         "head": after, "unchanged": after == head and clean, **res}, 1)
+        return {"ok": False, "status": "error", "error": (merged.stderr or merged.stdout).strip(),
+                "head": after, "clean": clean, **res}
+    return {"ok": False, "status": "conflict", "files": conflicts, "aborted": True,
+            "head": after, "unchanged": after == head and clean, **res}
+
+
+def cmd_sync(a) -> None:
+    res = sync_one(a.worktree, a.base)
+    out(res, 0 if res.get("ok") else 1)
 
 
 # ---------------------------------------------------------------- waiting inbox
@@ -880,10 +922,79 @@ def wait_stats(xs: list) -> dict:
     return {"median_hours": round(statistics.median(xs), 1) if xs else None, "p90_hours": pctl(xs, 0.9)}
 
 
+# Who is on a row: `take` marks an open (or answered, not acted on) row as being handled by one
+# session, so two sessions never work the same wait. Kept beside the inbox, not in its tables:
+# <work>/waiting.taken.json, {id: {by, since}}. A mark older than TAKE_HOURS is stale and can be
+# taken over; `acted` drops it.
+TAKEN_FILE = "waiting.taken.json"
+TAKE_HOURS = 12
+
+
+def taken_path(path: str) -> str:
+    return os.path.join(os.path.dirname(path), TAKEN_FILE)
+
+
+def load_taken(path: str) -> dict:
+    try:
+        with open(taken_path(path), encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_taken(path: str, taken: dict) -> None:
+    tp = taken_path(path)
+    if not taken:
+        if os.path.exists(tp):
+            os.remove(tp)
+        return
+    with open(tp, "w", encoding="utf-8") as fh:
+        json.dump(taken, fh, ensure_ascii=False, indent=1)
+
+
+def taken_view(mark, now: datetime) -> dict:
+    if not mark:
+        return {}
+    since = parse_ts(mark.get("since"))
+    hours = round((now - since).total_seconds() / 3600, 1) if since else None
+    return {"taken_by": mark.get("by"), "taken_since": mark.get("since"),
+            "taken_stale": hours is None or hours >= TAKE_HOURS}
+
+
+def annotate_taken(rows: list, path: str, now: datetime) -> list:
+    taken = load_taken(path)
+    return [{**r, **taken_view(taken.get(r["id"]), now)} for r in rows]
+
+
 def cmd_waiting(a) -> None:
     path, now = wait_file(a), wait_now(a)
     data = load_waiting(path)
     op = a.op
+    if op in ("take", "release"):
+        wid = a.id.upper()
+        live = [r for r in wait_rows(data, argparse.Namespace(), now)
+                if r["id"] == wid and (r["state"] == "open" or r.get("unacted"))]
+        taken = load_taken(path)
+        mark = taken.get(wid)
+        if op == "release":
+            if mark and (not a.by or mark.get("by") == a.by or a.force):
+                taken.pop(wid)
+                save_taken(path, taken)
+                out({"ok": True, "op": "release", "id": wid, "released": True})
+            out({"ok": True, "op": "release", "id": wid, "released": False,
+                 **({"taken_by": mark.get("by")} if mark else {})})
+        if not live:
+            out({"ok": False, "op": "take", "id": wid, "error": f"{wid} is not open (nor answered and not acted on)"}, 1)
+        view = taken_view(mark, now)
+        if mark and mark.get("by") != a.by and not view["taken_stale"] and not a.force:
+            out({"ok": False, "op": "take", "id": wid, "taken": False, **view,
+                 "error": f"{wid} is already being handled by '{mark.get('by')}' since {mark.get('since')}: "
+                          f"do not work on it here (--force only on the user's word)"}, 1)
+        taken[wid] = {"by": a.by, "since": now.strftime(TS_FMT)}
+        save_taken(path, taken)
+        out({"ok": True, "op": "take", "id": wid, "taken": True, "by": a.by,
+             **({"took_over": mark.get("by")} if mark and mark.get("by") != a.by else {})})
     if op == "add":
         if a.kind not in WAIT_KINDS:
             out({"ok": False, "error": f"--kind must be one of {', '.join(WAIT_KINDS)}"}, 1)
@@ -914,6 +1025,9 @@ def cmd_waiting(a) -> None:
             if not row:
                 out({"ok": False, "error": f"{wid} is not an answered row"}, 1)
             row["acted"] = now.strftime(TS_FMT)
+            taken = load_taken(path)
+            if taken.pop(wid, None):
+                save_taken(path, taken)
         save_waiting(path, data)
         out({"ok": True, "op": op, "file": path, "row": wait_view(row, "answered", now)})
     if op == "stats":  # rows rotated by `weight --rotate` still count
@@ -933,7 +1047,7 @@ def cmd_waiting(a) -> None:
             if (r["age_hours"] or 0) >= g["oldest_hours"]:
                 g["oldest_hours"], g["oldest"] = r["age_hours"] or 0, r["age"] or "0 h"
         out({"ok": True, "op": "list", "file": path, "now": now.strftime(TS_FMT), "state": a.state,
-             "count": len(shown), "by_kind": groups, "rows": shown})
+             "count": len(shown), "by_kind": groups, "rows": annotate_taken(shown, path, now)})
     answered = [r for r in rows if r["state"] == "answered"]
     opened = [r for r in rows if r["state"] == "open"]
     by_kind = {}
@@ -1304,10 +1418,10 @@ def cmd_drift(a) -> None:
         rows = on_board.get(name, [])
         if done and rows:
             add("board_done_row", f"done, but {len(rows)} board row(s) still list it",
-                "remove its rows and notes from the board", board_path, feature=name)
+                "run ho.py board --write (and remove its free-text notes)", board_path, feature=name)
         if not rows and word in STATUS_WORDS[:4]:
             add("board_missing_row", "in flight, but no board row links it",
-                "add its row under its project (STATE.md `Project:` line)", board_path, feature=name)
+                "run ho.py board --write (it adds the row under its project and stream)", board_path, feature=name)
         branches = head[2] if len(head) > 2 and not parked and first_word(head[2]) not in NONE_WORDS else ""
         for branch in sorted(set(b.rstrip(".,;)`") for b in re.findall(r"feature/[A-Za-z0-9._/-]+", branches))):
             for key in [k for k in repos if re.search(r"(?<![\w-])" + re.escape(k) + r"(?![\w-])", branches)]:
@@ -1358,6 +1472,308 @@ def cmd_drift(a) -> None:
         by_kind[i["kind"]] = by_kind.get(i["kind"], 0) + 1
     out({"ok": True, "board": rel(board_path), "features": len(features), "count": len(issues),
          "by_kind": by_kind, "issues": issues})
+
+
+# ---------------------------------------------------------------- resume-brief
+# What a resume session needs before its first TASK, in one call: the feature's STATE.md, the
+# next TASK's text, its waiting rows, its worktrees (merged with the base with --sync), the title
+# of the next hand-over session and the parts of the config a conductor uses. The session then
+# opens neither .home-office.yml, nor TASKS.md, nor waiting.md.
+
+TASK_HEAD_RE = re.compile(r"^(#{2,4})[ \t]+[^\n]*?\bTASK[ \t]+(\d+)\b", re.MULTILINE | re.IGNORECASE)
+CONFIG_SETTINGS = ("language", "base_branch", "worktrees", "layers", "shared_packages",
+                   "handover", "archive", "commit", "close")
+CONFIG_BLOCKS = ("hard_rules", "guards", "risk_zones")
+
+
+def strip_comment(line: str) -> str:
+    """A YAML line without its trailing comment (a # after a space, outside quotes)."""
+    quote = None
+    for i, ch in enumerate(line):
+        if ch in "'\"":
+            quote = None if quote == ch else (quote or ch)
+        elif ch == "#" and not quote and (i == 0 or line[i - 1] in " \t"):
+            return line[:i].rstrip()
+    return line.rstrip()
+
+
+def top_block(text: str, key: str):
+    """The lines of a top-level key's block (the key line excluded), comments and blanks removed."""
+    m = re.search(rf"^{re.escape(key)}\s*:[^\n]*\n", text, re.MULTILINE)
+    if not m:
+        return None
+    lines = []
+    for line in text[m.end():].splitlines():
+        if line and not line[0].isspace() and not line.startswith("#"):
+            break
+        line = strip_comment(line)
+        if line.strip():
+            lines.append(line.strip())
+    return lines
+
+
+def limits_of(text: str) -> dict:
+    found = {}
+    for line in top_block(text, "limits") or []:
+        m = re.match(r"([a-z_]+)\s*:\s*([0-9_]+)$", line)
+        if m:
+            found[m.group(1)] = int(m.group(2).replace("_", ""))
+    return found
+
+
+def md_sections(text: str) -> list:
+    """[(heading, body)] of the `## ` sections, in order."""
+    found = []
+    for part in re.split(r"^##[ \t]+", text, flags=re.MULTILINE)[1:]:
+        head, _, body = part.partition("\n")
+        found.append((head.strip(), body.strip()))
+    return found
+
+
+def task_block(text: str, n: int):
+    """The text of TASK n in TASKS.md, up to the next heading of the same or a higher level."""
+    for m in TASK_HEAD_RE.finditer(text):
+        if int(m.group(2)) != n:
+            continue
+        level = len(m.group(1))
+        nxt = re.compile(r"^#{1,%d}[ \t]" % level, re.MULTILINE).search(text, m.end())
+        return text[m.start():nxt.start() if nxt else len(text)].strip()
+    return None
+
+
+def next_session_title(fdir: str, name: str) -> str:
+    """`feat: NN-name #k`: k is one more than the highest number the title hook recorded."""
+    try:
+        with open(os.path.join(fdir, "sessions.json"), encoding="utf-8") as fh:
+            numbers = [v for v in json.load(fh).values() if isinstance(v, int)]
+    except Exception:
+        numbers = []
+    return f"feat: {name} #{max([1] + numbers) + 1}"
+
+
+def cmd_resume_brief(a) -> None:
+    config, text = config_text(a)
+    base_dir, work = os.path.dirname(config), work_dir(config)
+    root = os.path.join(work, "features")
+    names = sorted(os.listdir(root)) if os.path.isdir(root) else []
+    number = a.feature.split("-", 1)[0]
+    match = [n for n in names if n == a.feature or (n.startswith(number + "-") and n.startswith(a.feature))]
+    if len(match) != 1:
+        out({"ok": False, "error": f"feature not found or ambiguous: {a.feature}", "matches": match}, 1)
+    name = match[0]
+    fdir = os.path.join(root, name)
+    spath = os.path.join(fdir, "STATE.md")
+    try:
+        with open(spath, encoding="utf-8") as fh:
+            state = fh.read()
+    except OSError:
+        out({"ok": False, "error": f"no STATE.md in {fdir}"}, 1)
+    head = state_header(spath)
+    sections = md_sections(state)
+    next_text = sections[1][1] if len(sections) > 1 else ""  # template order: Done, Next, Blocked, Decisions
+    m = re.search(r"\bTASK[ \t]+(\d+)\b", next_text, re.IGNORECASE)
+    next_task, tasks_total = None, None
+    tpath = os.path.join(fdir, "TASKS.md")
+    if os.path.isfile(tpath):
+        with open(tpath, encoding="utf-8") as fh:
+            tasks = fh.read()
+        tasks_total = len({int(x.group(2)) for x in TASK_HEAD_RE.finditer(tasks)})
+        if m:
+            next_task = {"n": int(m.group(1)), "text": task_block(tasks, int(m.group(1)))}
+
+    repos = config_repos(text, base_dir)
+    wt_root = os.path.normpath(os.path.join(base_dir, top_value(text, "worktrees", "../.worktrees")))
+    branches = head[2] if len(head) > 2 else ""
+    worktrees, involved = [], set()
+    for key in repos:
+        wt = os.path.join(wt_root, key, name)
+        if os.path.isdir(wt) or re.search(r"(?<![\w-])" + re.escape(key) + r"(?![\w-])", branches):
+            involved.add(key)
+        if os.path.isdir(wt):
+            entry = {"repo": key, "worktree": wt.replace(os.sep, "/"), "base": repo_base(text, key)}
+            if a.sync:
+                res = sync_one(wt, entry["base"])
+                entry["sync"] = {k: res.get(k) for k in ("status", "reason", "message", "files", "error")
+                                 if res.get(k) not in (None, [], "")}
+            worktrees.append(entry)
+    raw_repos = {key: "{" + strip_comment(body) + "}" for key, body in REPO_RE.findall(text) if key in involved}
+
+    roles = {}
+    for rname, body in ROLE_RE.findall(text):
+        tool = re.search(r"\btool\s*:\s*['\"]?([\w.-]+)", body)
+        model = re.search(r"\bmodel\s*:\s*['\"]?([\w.\[\]/-]+)", body)
+        desc = re.search(r"\bdescription\s*:\s*\"([^\"]*)\"", body)
+        claude = not tool or tool.group(1) == "claude"
+        roles[rname] = {"tool": tool.group(1) if tool else "claude",
+                        "model": (full_model_id(model.group(1), text) if claude else model.group(1)) if model else None}
+        if desc:
+            roles[rname]["description"] = desc.group(1)
+
+    wpath = os.path.join(work, "waiting.md")
+    data = load_waiting(wpath)
+    now = datetime.now().replace(second=0, microsecond=0)
+    waits = [{k: r.get(k) for k in ("id", "kind", "state", "work", "action", "blocks", "age", "answer",
+                                    "taken_by", "taken_since") if r.get(k)}
+             for r in annotate_taken(wait_rows(data, argparse.Namespace(feature=name), now), wpath, now)
+             if r["state"] == "open" or r.get("unacted")]
+
+    settings = {k: top_value(text, k) for k in CONFIG_SETTINGS if top_value(text, k) is not None}
+    blocks = {k: top_block(text, k) for k in CONFIG_BLOCKS if top_block(text, k)}
+    out({"ok": True, "feature": name, "state_file": os.path.relpath(spath, base_dir).replace(os.sep, "/"),
+         "status_word": first_word(head[0] if head else ""), "state": state,
+         "next_task": next_task, "tasks_total": tasks_total,
+         "documents": [d for d in ("brief.md", "SPEC.md", "PLAN.md", "TASKS.md", "REVIEW.md")
+                       if os.path.isfile(os.path.join(fdir, d))],
+         "waiting": waits, "worktrees": worktrees,
+         "next_session_title": next_session_title(fdir, name),
+         "config": {"settings": settings, "limits": limits_of(text), "roles": roles,
+                    "repos": raw_repos, **blocks}})
+
+
+# ---------------------------------------------------------------- board
+# The feature rows of the board are derived from the STATE.md files, never edited by hand: many
+# sessions changed the same rows at once and the board fell behind. `board` rebuilds them (a row
+# per feature in flight or parked, under `## <project>` / `### <stream or Other>`, plus a
+# "touches" row in every other project its branches touch) and leaves everything else as it is.
+
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+SEP_RE = re.compile(r"^\|\s*:?-{3,}")
+
+
+def state_fields(path: str) -> dict:
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    fields = {}
+    for line in text.splitlines()[:14]:
+        m = re.match(r"^\s*([^:#|\n]{2,24}):\s*(.*)$", line)
+        if m and not line.startswith("#"):
+            fields.setdefault(m.group(1).strip().lower(), m.group(2).strip())
+    head = state_header(path)
+    sections = md_sections(text)
+    nxt = sections[1][1] if len(sections) > 1 else ""
+    first = next((l.strip().lstrip("-*0123456789. ").strip() for l in nxt.splitlines() if l.strip()), "")
+    project = next((v for k, v in fields.items() if k in ("project", "proyecto", "projet", "projekt")), "")
+    stream = next((v for k, v in fields.items() if k in ("stream",)), "")
+    return {"status": head[0] if head else "", "last": head[1] if len(head) > 1 else "",
+            "branches": head[2] if len(head) > 2 else "", "next": first,
+            "project": project.strip("` "), "stream": stream.strip("` ")}
+
+
+def cell_text(text: str, limit: int = 160) -> str:
+    text = " ".join((text or "").replace("|", "/").replace("**", "").split())
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def stream_key(value: str):
+    m = re.search(r"streams/(\d{2,3}-[A-Za-z0-9._-]+)", value or "")
+    return m.group(1) if m else None
+
+
+def cmd_board(a) -> None:
+    config, text = config_text(a)
+    base_dir, work = os.path.dirname(config), work_dir(config)
+    board_path = os.path.join(work, top_value(text, "board", "BOARD.md"))
+    try:
+        with open(board_path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        out({"ok": False, "error": f"no board at {board_path}"}, 1)
+    repos = list(config_repos(text, base_dir))
+    root = os.path.join(work, "features")
+
+    wanted = []  # (project, stream or None, row, feature)
+    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        spath = os.path.join(root, name, "STATE.md")
+        if not os.path.isfile(spath):
+            continue
+        f = state_fields(spath)
+        if first_word(f["status"]) in DONE_WORDS:
+            continue
+        link = f"[{name}](features/{name}/STATE.md)"
+        m = DATE_RE.search(f["last"]) or DATE_RE.search(f["status"])
+        date = m.group(0) if m else ""
+        project = f["project"] if f["project"] in repos else ""
+        stream = stream_key(f["stream"])
+        wanted.append((project or None, stream, f"| {link} | {cell_text(f['status'], 100)} | {date} | {cell_text(f['next'], 120)} |", name))
+        others = [k for k in repos if k != project and
+                  re.search(r"(?<![\w-])" + re.escape(k) + r"(?![\w-])", f["branches"])]
+        for key in others:
+            wanted.append((key, None, f"| {link} · touches, driven by {project or 'Other'} | "
+                                      f"{first_word(f['status']) or '?'} | {date} | see ## {project or 'Other'} |", name))
+
+    # Drop every generated feature row (first cell links a feature folder); keep all other lines.
+    kept, removed = [], []
+    for line in lines:
+        cells = line.strip().strip("|").split("|") if line.strip().startswith("|") else []
+        if cells and FEATURE_LINK_RE.search(cells[0]) and not SEP_RE.match(line.strip()):
+            removed.append(line.strip())
+            continue
+        kept.append(line)
+    header = next(([kept[i], kept[i + 1]] for i in range(len(kept) - 1)
+                   if kept[i].strip().startswith("|") and SEP_RE.match(kept[i + 1].strip())),
+                  ["| Work | Phase / gate | Last session | Next step |", "|---|---|---|---|"])
+
+    def find_heading(level: str, match, start=0, stop=None):
+        stop = len(kept) if stop is None else stop
+        for i in range(start, stop):
+            if kept[i].startswith(level + " ") and match(kept[i][len(level) + 1:].strip()):
+                return i
+        return None
+
+    def section_end(i: int, level: str) -> int:
+        for j in range(i + 1, len(kept)):
+            if re.match(r"^#{1,%d} " % len(level), kept[j]):
+                return j
+        return len(kept)
+
+    created = []
+    for project, stream, row, name in wanted:
+        title = project or "Other"
+        p = find_heading("##", lambda h, t=title: h.strip("` ").lower() == t.lower())
+        if p is None:
+            kept += ["", f"## {title}"]
+            p = len(kept) - 1
+            created.append(f"## {title}")
+        p_end = section_end(p, "##")
+        if stream:
+            s = find_heading("###", lambda h, k=stream: stream_key(h) == k, p + 1, p_end)
+            label = f"### streams/{stream}"
+        else:
+            s = find_heading("###", lambda h: not stream_key(h), p + 1, p_end)
+            label = "### Other"
+        if s is None:
+            ins = p_end
+            while ins > p + 1 and not kept[ins - 1].strip():
+                ins -= 1
+            block = ["", label, "", *header]
+            if ins < len(kept) and kept[ins].strip():
+                block.append("")  # keep a blank line before the next heading
+            kept[ins:ins] = block
+            s = ins + 1
+            created.append(f"{title} / {label[4:]}")
+            p_end = section_end(p, "##")
+        s_end = section_end(s, "###")
+        t = next((i for i in range(s + 1, s_end) if kept[i].strip().startswith("|")), None)
+        if t is None:
+            kept[s + 1:s + 1] = ["", *header]
+            t = s + 2
+            s_end = section_end(s, "###")
+        end = t
+        while end < len(kept) and kept[end].strip().startswith("|"):
+            end += 1
+        kept.insert(end, row)
+
+    added = [r for _, _, r, _ in wanted if r not in removed]
+    gone = [r for r in removed if r not in [w[2] for w in wanted]]
+    new_text = "\n".join(kept).rstrip() + "\n"
+    changed = new_text != "\n".join(lines).rstrip() + "\n"
+    if a.write and changed:
+        with open(board_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(new_text)
+    out({"ok": True, "board": os.path.relpath(board_path, base_dir).replace(os.sep, "/"),
+         "written": bool(a.write and changed), "changed": changed, "rows": len(wanted),
+         "added": added, "removed": gone, "created": created,
+         **({} if a.write else {"note": "dry run: pass --write to save"})})
 
 
 # ---------------------------------------------------------------- close-ready
@@ -1489,6 +1905,9 @@ def main() -> None:
     e.add_argument("--run-checks", action="store_true",
                    help="kept for compatibility: when no checks gate ran, task-end now always runs "
                         "prepare, the scope check and the checks itself")
+    e.add_argument("--commit", metavar="MESSAGE",
+                   help="with gate pass and report done, commit the TASK's touched files on its "
+                        "feature/ branch with this message, in the same call (`commit` in the result)")
     e.set_defaults(fn=cmd_task_end)
 
     cl = sub.add_parser("claims", help="the file claims of a repo's open TASKs, as JSON")
@@ -1509,7 +1928,7 @@ def main() -> None:
     k.add_argument("--no-cache", action="store_true", help="run it even if a passing result is cached")
     k.set_defaults(fn=cmd_check)
 
-    wt = sub.add_parser("waiting", help="the waiting inbox <work>/waiting.md: add | answer | acted | list | stats")
+    wt = sub.add_parser("waiting", help="the waiting inbox <work>/waiting.md: add | answer | acted | list | stats | take | release")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
     common.add_argument("--now", help="'YYYY-MM-DD HH:MM' instead of the clock (tests)")
@@ -1527,6 +1946,12 @@ def main() -> None:
     x.add_argument("--at", help="override the timestamp (default: now)")
     x = ws.add_parser("acted", parents=[common], help="mark an answered row as acted on")
     x.add_argument("id")
+    for op_name, op_help in (("take", "mark a row as handled by this session (refused if another holds it)"),
+                             ("release", "drop this session's mark on a row")):
+        x = ws.add_parser(op_name, parents=[common], help=op_help)
+        x.add_argument("id")
+        x.add_argument("--by", required=(op_name == "take"), help="this session's title, e.g. 'task: deploy W-012'")
+        x.add_argument("--force", action="store_true", help="take over or release another session's mark (user's word only)")
     x = ws.add_parser("list", parents=[common], help="rows as JSON, with age and counts by kind")
     x.add_argument("--state", choices=["open", "answered", "unacted", "all"], default="open")
     y = ws.add_parser("stats", parents=[common], help="count by kind, median and p90 wait, open rows by age")
@@ -1541,6 +1966,17 @@ def main() -> None:
     dr.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
     dr.add_argument("--feature", help="only this feature (NN-name or NN)")
     dr.set_defaults(fn=cmd_drift)
+
+    rb = sub.add_parser("resume-brief", help="what a resume session needs before its first TASK, in one call")
+    rb.add_argument("--feature", required=True, help="NN or NN-name")
+    rb.add_argument("--sync", action="store_true", help="merge each worktree's base into it, as `sync` does")
+    rb.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
+    rb.set_defaults(fn=cmd_resume_brief)
+
+    bd = sub.add_parser("board", help="rebuild the board's feature rows from the STATE.md files")
+    bd.add_argument("--write", action="store_true", help="save the board (default: dry run)")
+    bd.add_argument("--config", help="path of .home-office.yml (default: found from the current folder)")
+    bd.set_defaults(fn=cmd_board)
 
     cr = sub.add_parser("close-ready", help="may a finished feature close itself (close: card | auto)?")
     cr.add_argument("--feature", required=True, help="NN-name")
